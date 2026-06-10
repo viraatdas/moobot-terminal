@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Moobot Terminal</title>
+<meta name="description" content="A Mac trading terminal with an AI research desk. Trade through Robinhood, run continuous research agents, approve every order yourself." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@300;400&family=Instrument+Serif:ital@0;1&family=Martian+Mono:wght@300&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #0a0a0a;
+    --faint: #8a8a8a;
+    --hair: #e6e6e6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #ffffff;
+    color: var(--ink);
+    font-family: "Instrument Sans", -apple-system, sans-serif;
+    font-weight: 300;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.7;
+  }
+  main {
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 18vh 28px 12vh;
+  }
+  .wordmark {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-style: italic;
+    font-size: 44px;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+  }
+  .wordmark span { font-style: normal; }
+  .tag {
+    margin-top: 10px;
+    font-size: 17px;
+    color: var(--ink);
+  }
+  .sub {
+    margin-top: 28px;
+    font-size: 15px;
+    color: var(--faint);
+    max-width: 52ch;
+  }
+  .sub + .sub { margin-top: 14px; }
+  hr {
+    border: 0;
+    border-top: 1px solid var(--hair);
+    margin: 48px 0;
+  }
+  h2 {
+    font-weight: 400;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-bottom: 14px;
+  }
+  pre {
+    font-family: "Martian Mono", ui-monospace, monospace;
+    font-weight: 300;
+    font-size: 13px;
+    padding: 16px 18px;
+    border: 1px solid var(--hair);
+    overflow-x: auto;
+    user-select: all;
+  }
+  ul { list-style: none; }
+  li {
+    font-size: 15px;
+    color: var(--ink);
+    padding: 10px 0;
+    border-bottom: 1px solid var(--hair);
+  }
+  li em {
+    font-style: normal;
+    color: var(--faint);
+    display: block;
+    font-size: 13.5px;
+  }
+  footer {
+    margin-top: 64px;
+    font-size: 13px;
+    color: var(--faint);
+  }
+  a { color: inherit; text-underline-offset: 3px; }
+  .note { font-size: 12.5px; color: var(--faint); margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="wordmark">moobot<span>.</span></div>
+  <p class="tag">A Mac trading terminal with an AI research desk.</p>
+
+  <p class="sub">
+    Moobot Terminal connects to your Robinhood account and puts a fleet of research
+    agents behind your trading. Open a research tab — “NVDA earnings setup”, “uranium
+    miners” — and an agent works the topic continuously: news, filings, price action,
+    sentiment, distilled into a living thesis.
+  </p>
+  <p class="sub">
+    When the evidence supports a trade, the agent files a proposal. Nothing executes
+    without your approval. You are the only one with the trigger.
+  </p>
+
+  <hr />
+
+  <h2>Install</h2>
+  <pre>brew install --cask viraatdas/tap/moobot-terminal</pre>
+  <p class="note">Apple Silicon · requires <a href="https://claude.com/claude-code">Claude Code</a> for the research engine · bring your own Robinhood account.</p>
+
+  <hr />
+
+  <h2>What it does</h2>
+  <ul>
+    <li>Trade from the terminal <em>portfolio, positions, quotes, and an order ticket over Robinhood — review first, then place</em></li>
+    <li>Hyper research tabs <em>continuous agent research per topic with a live activity feed and a maintained thesis, not a chat log</em></li>
+    <li>Trade proposals, human trigger <em>agents propose with thesis and confidence; every order requires your explicit approval</em></li>
+    <li>Your sources <em>web, SEC EDGAR, market data, social sentiment — configurable per research tab</em></li>
+  </ul>
+
+  <footer>
+    Built by <a href="https://viraat.dev">Viraat Das</a> ·
+    <a href="https://github.com/viraatdas/moobot-terminal">Source</a>
+  </footer>
+</main>
+</body>
+</html>

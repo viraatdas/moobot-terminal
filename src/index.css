@@ -1,0 +1,164 @@
+@import "tailwindcss";
+@import "@fontsource/instrument-sans/400.css";
+@import "@fontsource/instrument-sans/500.css";
+@import "@fontsource/instrument-sans/600.css";
+@import "@fontsource/instrument-serif/400.css";
+@import "@fontsource/instrument-serif/400-italic.css";
+@import "@fontsource/martian-mono/300.css";
+@import "@fontsource/martian-mono/400.css";
+@import "@fontsource/martian-mono/600.css";
+
+@theme {
+  --font-ui: "Instrument Sans", -apple-system, sans-serif;
+  --font-wordmark: "Instrument Serif", Georgia, serif;
+  --font-data: "Martian Mono", ui-monospace, monospace;
+
+  --color-bg: #0a0b0e;
+  --color-panel: #0f1116;
+  --color-panel-2: #13161d;
+  --color-hairline: rgba(255, 255, 255, 0.07);
+  --color-hairline-2: rgba(255, 255, 255, 0.12);
+  --color-ink: #e9eaee;
+  --color-ink-dim: #9a9da8;
+  --color-ink-faint: #5d6068;
+  --color-amber: #f0b34c;
+  --color-amber-dim: rgba(240, 179, 76, 0.14);
+  --color-pos: #3fdc97;
+  --color-pos-dim: rgba(63, 220, 151, 0.12);
+  --color-neg: #ff5d5d;
+  --color-neg-dim: rgba(255, 93, 93, 0.12);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+/* grain — keeps the big dark fields from feeling flat */
+#root::after {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.font-data {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+input,
+textarea,
+select {
+  user-select: text;
+  cursor: text;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* findings markdown */
+.findings {
+  user-select: text;
+  cursor: auto;
+}
+.findings h1,
+.findings h2 {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-amber);
+  margin: 20px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-hairline);
+}
+.findings h3 {
+  font-weight: 600;
+  font-size: 13px;
+  margin: 14px 0 6px;
+  color: var(--color-ink);
+}
+.findings p,
+.findings li {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-ink-dim);
+  margin-bottom: 6px;
+}
+.findings strong {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+.findings ul {
+  padding-left: 18px;
+  list-style: square;
+}
+.findings code {
+  font-family: var(--font-data);
+  font-size: 11.5px;
+  background: var(--color-panel-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--color-amber);
+}
+.findings a {
+  color: var(--color-amber);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.feed-in {
+  animation: feed-in 0.25s ease both;
+}
