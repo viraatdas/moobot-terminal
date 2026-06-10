@@ -2,12 +2,11 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 
-export const DATA_DIR = path.join(
-  os.homedir(),
-  "Library",
-  "Application Support",
-  "MoobotTerminal",
-);
+// On the desktop app this is macOS Application Support; on the cloud sidecar
+// set MOOBOT_DATA_DIR to a mounted volume so tabs/findings survive restarts.
+export const DATA_DIR =
+  process.env.MOOBOT_DATA_DIR ||
+  path.join(os.homedir(), "Library", "Application Support", "MoobotTerminal");
 export const RESEARCH_DIR = path.join(DATA_DIR, "research");
 export const PROPOSALS_FILE = path.join(DATA_DIR, "proposals.json");
 export const RH_AUTH_FILE = path.join(DATA_DIR, "rh-oauth.json");

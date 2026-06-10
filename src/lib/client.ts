@@ -124,6 +124,28 @@ export interface OptionContract {
 
 type EventHandler = (event: string, payload: any) => void;
 
+const LOCAL_ENDPOINT = "ws://127.0.0.1:4517";
+
+/** Where the UI connects: the local sidecar, or a cloud sidecar (always-on). */
+export function getEndpoint(): { url: string; cloud: boolean } {
+  const host = localStorage.getItem("moobot.cloud.host"); // e.g. moobot-sidecar.fly.dev
+  const token = localStorage.getItem("moobot.cloud.token");
+  if (host && token) {
+    return { url: `wss://${host}/?token=${encodeURIComponent(token)}`, cloud: true };
+  }
+  return { url: LOCAL_ENDPOINT, cloud: false };
+}
+
+export function setCloudEndpoint(host: string, token: string) {
+  localStorage.setItem("moobot.cloud.host", host.replace(/^wss?:\/\//, "").replace(/\/.*$/, ""));
+  localStorage.setItem("moobot.cloud.token", token);
+}
+
+export function clearCloudEndpoint() {
+  localStorage.removeItem("moobot.cloud.host");
+  localStorage.removeItem("moobot.cloud.token");
+}
+
 class SidecarClient {
   private ws: WebSocket | null = null;
   private nextId = 1;
@@ -131,14 +153,26 @@ class SidecarClient {
   private listeners = new Set<EventHandler>();
   private connListeners = new Set<(up: boolean) => void>();
   connected = false;
+  cloud = false;
 
   start() {
     if (this.ws) return;
     this.connect();
   }
 
+  /** Reconnect to a freshly-changed endpoint. */
+  reconnect() {
+    try {
+      this.ws?.close();
+    } catch {}
+    this.ws = null;
+    this.connect();
+  }
+
   private connect() {
-    const ws = new WebSocket("ws://127.0.0.1:4517");
+    const { url, cloud } = getEndpoint();
+    this.cloud = cloud;
+    const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => {
       this.connected = true;

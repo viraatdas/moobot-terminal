@@ -8,6 +8,8 @@ interface Props {
   authUrl: string | null;
   pendingCount: number;
   onOpenAlerts: () => void;
+  onOpenConnection: () => void;
+  cloud: boolean;
 }
 
 /** Friendly account name: the default (funded) account is the "main account". */
@@ -38,6 +40,8 @@ export function TitleBar({
   authUrl,
   pendingCount,
   onOpenAlerts,
+  onOpenConnection,
+  cloud,
 }: Props) {
   return (
     <div
@@ -53,7 +57,16 @@ export function TitleBar({
       </span>
 
       <div className="flex items-center gap-4" data-tauri-drag-region>
-        <Dot ok={sidecarUp} label="engine" />
+        <button
+          onClick={onOpenConnection}
+          title="Engine connection (local / cloud)"
+          className="flex items-center gap-1.5 hover:opacity-80"
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${sidecarUp ? "bg-pos" : "bg-neg pulse-dot"}`} />
+          <span className="text-[10px] tracking-[0.14em] uppercase text-ink-faint">
+            {cloud ? "cloud" : "engine"}
+          </span>
+        </button>
         <Dot ok={rhAuthed} label="robinhood" />
       </div>
 

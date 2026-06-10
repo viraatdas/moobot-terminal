@@ -12,6 +12,7 @@ import { PortfolioRail } from "./components/PortfolioRail";
 import { ResearchBoard } from "./components/ResearchBoard";
 import { ProposalsRail } from "./components/ProposalsRail";
 import { AlertsModal } from "./components/AlertsModal";
+import { ConnectionModal } from "./components/ConnectionModal";
 
 export interface FeedLine {
   id: number;
@@ -41,6 +42,8 @@ export default function App() {
   const [proposals, setProposals] = useState<TradeProposal[]>([]);
   const [feed, setFeed] = useState<FeedLine[]>([]);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [showConnection, setShowConnection] = useState(false);
+  const [cloud, setCloud] = useState(false);
 
   const refreshResearch = useCallback(async () => {
     try {
@@ -102,6 +105,7 @@ export default function App() {
     client.start();
     const offConn = client.onConnection((up) => {
       setSidecarUp(up);
+      setCloud(client.cloud);
       if (up) {
         void bootRobinhood();
         void refreshResearch();
@@ -215,6 +219,8 @@ export default function App() {
         authUrl={authUrl}
         pendingCount={pendingCount}
         onOpenAlerts={() => setShowAlerts(true)}
+        onOpenConnection={() => setShowConnection(true)}
+        cloud={cloud}
       />
       <div className="grid min-h-0 flex-1 grid-cols-[300px_1fr_340px] gap-px bg-hairline">
         <PortfolioRail
@@ -232,6 +238,7 @@ export default function App() {
         />
       </div>
       {showAlerts && <AlertsModal onClose={() => setShowAlerts(false)} />}
+      {showConnection && <ConnectionModal onClose={() => setShowConnection(false)} />}
     </div>
   );
 }

@@ -1,0 +1,28 @@
+# Always-on Moobot Terminal sidecar.
+# US region for Robinhood access. Single always-on machine; the desktop UI
+# connects over wss:// with the MOOBOT_TOKEN shared secret.
+app = "moobot-sidecar"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  MOOBOT_PORT = "4517"
+  MOOBOT_DATA_DIR = "/data"
+  NODE_ENV = "production"
+
+[[mounts]]
+  source = "moobot_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 4517
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
