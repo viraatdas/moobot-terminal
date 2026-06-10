@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -221,7 +222,9 @@ export class ResearchManager {
     ];
     if (tab.sessionId) args.push("--resume", tab.sessionId);
 
-    const child = spawn("claude", args, {
+    this.onEvent?.({ tabId: id, kind: "activity", text: "starting research agent…" });
+
+    const child = spawn(this.claudeBin(), args, {
       cwd: this.tabDir(id),
       env: { ...process.env },
       stdio: ["ignore", "pipe", "pipe"],
@@ -229,10 +232,13 @@ export class ResearchManager {
     this.running.set(id, { child });
 
     let stderr = "";
+    let gotOutput = false;
+    let settled = false;
     child.stderr!.on("data", (d) => (stderr += d.toString()));
 
     let buffer = "";
     child.stdout!.on("data", (chunk) => {
+      gotOutput = true;
       buffer += chunk.toString();
       let nl: number;
       while ((nl = buffer.indexOf("\n")) >= 0) {
@@ -246,32 +252,76 @@ export class ResearchManager {
     });
 
     await new Promise<void>((resolve) => {
-      child.on("close", (code) => {
+      const finish = (status: "ok" | "error", error: string | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(startupTimer);
+        clearTimeout(maxTimer);
         this.running.delete(id);
         tab.runCount += 1;
-        if (code === 0) {
-          tab.lastRunStatus = "ok";
-          tab.lastError = null;
-        } else {
-          tab.lastRunStatus = "error";
-          tab.lastError = stderr.slice(-2000) || `claude exited with code ${code}`;
-          this.onEvent?.({ tabId: id, kind: "run-error", text: tab.lastError });
+        tab.lastRunStatus = status;
+        tab.lastError = error;
+        if (status === "error") {
+          this.onEvent?.({ tabId: id, kind: "run-error", text: error ?? "unknown error" });
         }
         this.persist(tab);
         this.onEvent?.({ tabId: id, kind: "run-finished" });
         this.onEvent?.({ tabId: id, kind: "findings-updated" });
         this.onProposalsMaybeChanged?.(id);
         resolve();
+      };
+
+      // Spawn failure (e.g. claude not found) emits 'error', not 'close'.
+      child.on("error", (err) => {
+        finish("error", `failed to launch claude: ${err.message}`);
+      });
+
+      // Watchdog: kill if the agent never streams, or runs too long.
+      const startupTimer = setTimeout(() => {
+        if (!gotOutput && !settled) {
+          child.kill("SIGKILL");
+          finish(
+            "error",
+            "agent produced no output within 2 min (claude/MCP startup stalled)",
+          );
+        }
+      }, 120_000);
+      const maxTimer = setTimeout(() => {
+        if (!settled) {
+          child.kill("SIGKILL");
+          finish("error", "agent exceeded the 10 min run limit and was stopped");
+        }
+      }, 600_000);
+
+      child.on("close", (code) => {
+        finish(
+          code === 0 ? "ok" : "error",
+          code === 0 ? null : stderr.slice(-2000) || `claude exited with code ${code}`,
+        );
       });
     });
   }
 
+  /** Resolve the claude binary, preferring the known install path. */
+  private claudeBin(): string {
+    const candidate = path.join(os.homedir(), ".local", "bin", "claude");
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      return "claude"; // fall back to PATH lookup
+    }
+  }
+
   private handleStreamEvent(tab: ResearchTab, ev: any) {
-    if (ev.type === "system" && ev.subtype === "init" && ev.session_id) {
+    // Capture the session id from any event that carries it (the init event is
+    // the canonical source, but grabbing it defensively means a slow/odd init
+    // never costs us --resume continuity).
+    if (ev.session_id && tab.sessionId !== ev.session_id) {
       tab.sessionId = ev.session_id;
       this.persist(tab);
-      return;
     }
+    if (ev.type === "system" && ev.subtype === "init") return;
     if (ev.type === "assistant") {
       const blocks = ev.message?.content ?? [];
       for (const b of blocks) {

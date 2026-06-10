@@ -133,10 +133,16 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
           <div className="flex shrink-0 items-center gap-3 border-b border-hairline px-5 py-3">
             <div className="min-w-0 flex-1">
               <div className="truncate text-[15px] font-semibold text-ink">{active.topic}</div>
-              {findings.state?.headline && (
-                <div className="mt-0.5 truncate text-[12px] text-ink-dim">
-                  {findings.state.headline}
+              {active.lastRunStatus === "error" && active.lastError ? (
+                <div className="mt-0.5 truncate text-[12px] text-neg" title={active.lastError}>
+                  ⚠ {active.lastError}
                 </div>
+              ) : (
+                findings.state?.headline && (
+                  <div className="mt-0.5 truncate text-[12px] text-ink-dim">
+                    {findings.state.headline}
+                  </div>
+                )
               )}
             </div>
             {findings.state?.sentiment && (
