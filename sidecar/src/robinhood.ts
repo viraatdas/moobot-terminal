@@ -257,8 +257,9 @@ export class RobinhoodGateway {
       .join("\n");
     try {
       const parsed = JSON.parse(text);
-      // Robinhood wraps results in a {"data": ...} envelope — unwrap it.
-      if (parsed && typeof parsed === "object" && "data" in parsed && Object.keys(parsed).length === 1) {
+      // Robinhood wraps results in a {"data": ..., "guide": "..."} envelope —
+      // unwrap the data, drop the agent-guidance prose.
+      if (parsed && typeof parsed === "object" && "data" in parsed) {
         return parsed.data;
       }
       return parsed;

@@ -13,9 +13,31 @@ const plugins = new PluginManager();
 const research = new ResearchManager(plugins);
 const proposals = new ProposalQueue(rh, research);
 
-const wss = new WebSocketServer({ host: "127.0.0.1", port: WS_PORT });
+let wss: WebSocketServer | null = null;
+
+function listen(attempt = 0) {
+  const server = new WebSocketServer({ host: "127.0.0.1", port: WS_PORT });
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    // A previous sidecar may still hold the port for a moment (app relaunch,
+    // dev instance shutting down) — retry before giving up.
+    if (err.code === "EADDRINUSE" && attempt < 10) {
+      console.error(`[moobot-sidecar] port ${WS_PORT} in use, retry ${attempt + 1}/10`);
+      server.close();
+      setTimeout(() => listen(attempt + 1), 2000);
+      return;
+    }
+    console.error(`[moobot-sidecar] fatal server error: ${err}`);
+    process.exit(1);
+  });
+  server.on("listening", () => {
+    wss = server;
+    console.log(`[moobot-sidecar] listening on ws://127.0.0.1:${WS_PORT}`);
+  });
+  server.on("connection", onConnection);
+}
 
 function broadcast(event: string, payload: unknown) {
+  if (!wss) return;
   const msg = JSON.stringify({ type: "event", event, payload });
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) client.send(msg);
@@ -84,7 +106,7 @@ const handlers: Record<string, Handler> = {
   "proposals.reject": ({ id }) => proposals.reject(id),
 };
 
-wss.on("connection", (ws) => {
+function onConnection(ws: WebSocket) {
   ws.on("message", async (data) => {
     let req: { id: string; type: string; payload?: unknown };
     try {
@@ -101,9 +123,9 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify({ id: req.id, ok: false, error: String(err) }));
     }
   });
-});
+}
 
-console.log(`[moobot-sidecar] listening on ws://127.0.0.1:${WS_PORT}`);
+listen();
 
 // Connect eagerly if we have tokens (or can import Claude Code's), so the UI
 // loads data instantly without a browser round-trip.
