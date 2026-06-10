@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { marked } from "marked";
-import { client, type ResearchState, type ResearchTab } from "../lib/client";
+import {
+  client,
+  LENS_META,
+  type LensType,
+  type ResearchState,
+  type ResearchTab,
+} from "../lib/client";
 import type { FeedLine } from "../App";
+import { LensSurface } from "./LensSurface";
 
 interface PanelItem {
   label?: string;
@@ -35,7 +42,8 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
     markdown: string;
     state: ResearchState | null;
     panels: Panel[];
-  }>({ markdown: "", state: null, panels: [] });
+    lens: Record<string, any>;
+  }>({ markdown: "", state: null, panels: [], lens: {} });
   const [creating, setCreating] = useState(false);
 
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null;
@@ -80,17 +88,20 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
                 : "border-transparent text-ink-faint hover:text-ink-dim"
             }`}
           >
-            {t.lastRunStatus === "running" && (
+            {t.lastRunStatus === "running" ? (
               <span className="h-1.5 w-1.5 rounded-full bg-amber pulse-dot" />
+            ) : t.lastRunStatus === "error" ? (
+              <span className="h-1.5 w-1.5 rounded-full bg-neg" />
+            ) : (
+              <span className="text-[11px] text-ink-faint">{LENS_META[t.type]?.glyph}</span>
             )}
-            {t.lastRunStatus === "error" && <span className="h-1.5 w-1.5 rounded-full bg-neg" />}
-            <span className="max-w-44 truncate">{t.topic}</span>
+            <span className="max-w-44 truncate">{t.topic || LENS_META[t.type]?.label}</span>
           </button>
         ))}
         <button
           onClick={() => setCreating(true)}
           className="shrink-0 px-4 text-[16px] text-ink-faint hover:text-amber"
-          title="New research tab"
+          title="New lens tab"
         >
           +
         </button>
@@ -108,6 +119,7 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
 
       {creating && (
         <NewTabForm
+          tabs={tabs}
           onDone={(created) => {
             setCreating(false);
             if (created) {
@@ -120,19 +132,21 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
 
       {!active && !creating && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <div className="font-wordmark text-[26px] italic text-ink-faint">
-            hyper research
-          </div>
-          <p className="max-w-90 text-center text-[13px] leading-relaxed text-ink-faint">
-            Open a tab with a topic — “NVDA earnings setup”, “uranium miners”, “rate cut
-            odds” — and an agent will research it continuously, maintaining a living thesis
-            and proposing trades when the evidence is there.
+          <div className="font-wordmark text-[26px] italic text-ink-faint">moobot lenses</div>
+          <p className="max-w-100 text-center text-[13px] leading-relaxed text-ink-faint">
+            Open a lens onto your book and the market. Each tab is an agent that works
+            continuously: <span className="text-ink-dim">Research</span> a topic,{" "}
+            <span className="text-ink-dim">Pulse</span> what's moving,{" "}
+            <span className="text-ink-dim">Exposure</span> &{" "}
+            <span className="text-ink-dim">Lattice</span> for risk and correlation,{" "}
+            <span className="text-ink-dim">Scout</span> for new ideas, and{" "}
+            <span className="text-ink-dim">Trade</span> to turn it all into proposals.
           </p>
           <button
             onClick={() => setCreating(true)}
             className="mt-2 rounded-sm border border-amber/40 bg-amber-dim px-4 py-1.5 text-[12px] font-semibold text-amber hover:bg-amber/25"
           >
-            New research tab
+            New lens
           </button>
         </div>
       )}
@@ -142,7 +156,12 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
           {/* tab header */}
           <div className="flex shrink-0 items-center gap-3 border-b border-hairline px-5 py-3">
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[15px] font-semibold text-ink">{active.topic}</div>
+              <div className="flex items-baseline gap-2">
+                <span className="shrink-0 text-[12px] text-ink-faint" title={LENS_META[active.type]?.label}>
+                  {LENS_META[active.type]?.glyph}
+                </span>
+                <TabTitle tab={active} onChanged={onTabsChanged} />
+              </div>
               {active.lastRunStatus === "error" && active.lastError ? (
                 <div className="mt-0.5 truncate text-[12px] text-neg" title={active.lastError}>
                   ⚠ {active.lastError}
@@ -155,7 +174,7 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
                 )
               )}
             </div>
-            {findings.state?.sentiment && (
+            {active.type === "research" && findings.state?.sentiment && (
               <span
                 className={`rounded-sm px-2 py-1 text-[10px] font-semibold tracking-[0.12em] uppercase ${
                   SENTIMENT_STYLE[findings.state.sentiment] ?? SENTIMENT_STYLE.neutral
@@ -168,26 +187,32 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
             <RunControls tab={active} onChanged={onTabsChanged} />
           </div>
 
-          {/* body: findings + live feed */}
+          {/* body: lens surface + live feed */}
           <div className="grid min-h-0 flex-1 grid-cols-[1fr_240px]">
-            <div className="findings min-h-0 overflow-y-auto px-6 py-4">
-              {findings.panels.length > 0 && (
-                <div className="mb-4 grid grid-cols-2 gap-2.5">
-                  {findings.panels.map((panel) => (
-                    <PluginPanel key={panel.plugin} panel={panel} />
-                  ))}
-                </div>
-              )}
-              {findings.markdown ? (
-                <div dangerouslySetInnerHTML={{ __html: marked.parse(findings.markdown) }} />
-              ) : (
-                <div className="py-10 text-center text-[12px] text-ink-faint">
-                  {active.lastRunStatus === "running"
-                    ? "First research pass running…"
-                    : "No findings yet. Run the agent."}
-                </div>
-              )}
-            </div>
+            {active.type === "research" ? (
+              <div className="findings min-h-0 overflow-y-auto px-6 py-4">
+                {findings.panels.length > 0 && (
+                  <div className="mb-4 grid grid-cols-2 gap-2.5">
+                    {findings.panels.map((panel) => (
+                      <PluginPanel key={panel.plugin} panel={panel} />
+                    ))}
+                  </div>
+                )}
+                {findings.markdown ? (
+                  <div dangerouslySetInnerHTML={{ __html: marked.parse(findings.markdown) }} />
+                ) : (
+                  <div className="py-10 text-center text-[12px] text-ink-faint">
+                    {active.lastRunStatus === "running"
+                      ? "First research pass running…"
+                      : "No findings yet. Run the agent."}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex min-h-0 flex-col">
+                <LensSurface type={active.type} lens={findings.lens} />
+              </div>
+            )}
             <div className="flex min-h-0 flex-col border-l border-hairline bg-panel">
               <div className="flex items-center gap-2 px-3 pt-3 pb-1.5">
                 <span className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">
@@ -215,6 +240,47 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+function TabTitle({ tab, onChanged }: { tab: ResearchTab; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(tab.topic);
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={async () => {
+          setEditing(false);
+          if (val.trim() && val !== tab.topic) {
+            await client.request("research.update", { id: tab.id, topic: val.trim() });
+            onChanged();
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") {
+            setVal(tab.topic);
+            setEditing(false);
+          }
+        }}
+        className="min-w-0 flex-1 rounded-sm border border-amber/40 bg-bg px-1.5 text-[15px] font-semibold text-ink focus:outline-none"
+      />
+    );
+  }
+  return (
+    <span
+      onDoubleClick={() => {
+        setVal(tab.topic);
+        setEditing(true);
+      }}
+      title="Double-click to rename"
+      className="truncate text-[15px] font-semibold text-ink"
+    >
+      {tab.topic || LENS_META[tab.type]?.label}
+    </span>
   );
 }
 
@@ -305,35 +371,48 @@ function RunControls({ tab, onChanged }: { tab: ResearchTab; onChanged: () => vo
   );
 }
 
-function NewTabForm({ onDone }: { onDone: (createdId: string | null) => void }) {
+const LENS_ORDER: LensType[] = ["research", "pulse", "scout", "exposure", "lattice", "trade"];
+
+function NewTabForm({
+  tabs,
+  onDone,
+}: {
+  tabs: ResearchTab[];
+  onDone: (createdId: string | null) => void;
+}) {
+  const [type, setType] = useState<LensType>("research");
   const [topic, setTopic] = useState("");
   const [notes, setNotes] = useState("");
   const [interval, setIntervalMin] = useState(30);
+  const [refs, setRefs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [plugins, setPlugins] = useState<
-    Array<{ name: string; title: string; enabled: boolean }>
-  >([]);
   const ref = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     ref.current?.focus();
-    client.request("plugins.list").then(setPlugins).catch(() => {});
-  }, []);
+  }, [type]);
 
-  async function togglePlugin(name: string, enabled: boolean) {
-    try {
-      setPlugins(await client.request("plugins.setEnabled", { name, enabled }));
-    } catch {}
-  }
+  const meta = LENS_META[type];
+  const topicLabel =
+    type === "trade"
+      ? "What do you want to do? — e.g. hedge my tech concentration, add to NVDA on dips"
+      : type === "pulse"
+        ? "Focus (optional) — blank = your whole book + market"
+        : type === "scout"
+          ? "Mandate (optional) — e.g. high-IV options setups, small-cap momentum"
+          : "Topic — e.g. NVDA earnings setup, uranium miners, AI capex cycle";
 
   async function create() {
-    if (!topic.trim() || busy) return;
+    if (meta.hasTopic && type !== "pulse" && type !== "scout" && !topic.trim()) return;
+    if (busy) return;
     setBusy(true);
     try {
       const tab = await client.request("research.create", {
-        topic: topic.trim(),
+        type,
+        topic: topic.trim() || meta.label,
         notes: notes.trim(),
         intervalMinutes: interval,
+        refs,
       });
       onDone(tab.id);
     } catch (err) {
@@ -344,6 +423,28 @@ function NewTabForm({ onDone }: { onDone: (createdId: string | null) => void }) 
 
   return (
     <div className="border-b border-hairline bg-panel px-5 py-4">
+      {/* lens type picker */}
+      <div className="mb-3 grid grid-cols-6 gap-1.5">
+        {LENS_ORDER.map((t) => {
+          const m = LENS_META[t];
+          return (
+            <button
+              key={t}
+              onClick={() => setType(t)}
+              className={`flex flex-col items-center gap-1 rounded-sm border px-1 py-2 transition-colors ${
+                type === t
+                  ? "border-amber/50 bg-amber-dim text-amber"
+                  : "border-hairline text-ink-faint hover:text-ink-dim"
+              }`}
+            >
+              <span className="text-[15px]">{m.glyph}</span>
+              <span className="text-[10px] font-medium">{m.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mb-2 text-[11px] text-ink-faint">{meta.blurb}</p>
+
       <div className="grid grid-cols-[1fr_auto] gap-3">
         <input
           ref={ref}
@@ -353,7 +454,7 @@ function NewTabForm({ onDone }: { onDone: (createdId: string | null) => void }) 
             if (e.key === "Enter") void create();
             if (e.key === "Escape") onDone(null);
           }}
-          placeholder="Research topic — e.g. NVDA earnings setup, uranium miners, AI capex cycle"
+          placeholder={topicLabel}
           className="rounded-sm border border-hairline bg-bg px-3 py-2 text-[13px] text-ink placeholder:text-ink-faint focus:border-amber/50 focus:outline-none"
         />
         <select
@@ -362,40 +463,46 @@ function NewTabForm({ onDone }: { onDone: (createdId: string | null) => void }) 
           className="font-data rounded-sm border border-hairline bg-bg px-2 text-[11px] text-ink-dim outline-none"
         >
           <option value={0}>manual</option>
+          <option value={5}>every 5m</option>
           <option value={15}>every 15m</option>
           <option value={30}>every 30m</option>
           <option value={60}>hourly</option>
           <option value={240}>every 4h</option>
         </select>
       </div>
-      <textarea
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        placeholder="Optional notes for the agent: sources to favor, angle, position context, risk constraints…"
-        rows={2}
-        className="mt-2 w-full resize-none rounded-sm border border-hairline bg-bg px-3 py-2 text-[12px] text-ink placeholder:text-ink-faint focus:border-amber/50 focus:outline-none"
-      />
-      {plugins.length > 0 && (
+
+      {/* trade lens: @-reference other tabs */}
+      {type === "trade" && tabs.length > 0 && (
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-[9.5px] tracking-[0.16em] uppercase text-ink-faint">
-            Sources
+            @ reference
           </span>
-          {plugins.map((p) => (
+          {tabs.map((t) => (
             <button
-              key={p.name}
-              onClick={() => void togglePlugin(p.name, !p.enabled)}
-              title={p.enabled ? "Click to disable" : "Click to enable"}
-              className={`rounded-sm border px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                p.enabled
+              key={t.id}
+              onClick={() =>
+                setRefs((r) => (r.includes(t.id) ? r.filter((x) => x !== t.id) : [...r, t.id]))
+              }
+              className={`rounded-sm border px-2 py-0.5 text-[10px] font-medium ${
+                refs.includes(t.id)
                   ? "border-amber/35 bg-amber-dim text-amber"
                   : "border-hairline text-ink-faint hover:text-ink-dim"
               }`}
             >
-              {p.title}
+              {LENS_META[t.type]?.glyph} {t.topic}
             </button>
           ))}
         </div>
       )}
+
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="Optional notes for the agent: angle, constraints, position context…"
+        rows={2}
+        className="mt-2 w-full resize-none rounded-sm border border-hairline bg-bg px-3 py-2 text-[12px] text-ink placeholder:text-ink-faint focus:border-amber/50 focus:outline-none"
+      />
+
       <div className="mt-2 flex justify-end gap-2">
         <button
           onClick={() => onDone(null)}
@@ -405,10 +512,10 @@ function NewTabForm({ onDone }: { onDone: (createdId: string | null) => void }) 
         </button>
         <button
           onClick={() => void create()}
-          disabled={!topic.trim() || busy}
+          disabled={busy || (meta.hasTopic && type !== "pulse" && type !== "scout" && !topic.trim())}
           className="rounded-sm border border-amber/40 bg-amber-dim px-4 py-1.5 text-[12px] font-semibold text-amber hover:bg-amber/25 disabled:opacity-40"
         >
-          {busy ? "Starting agent…" : "Start researching"}
+          {busy ? "Starting…" : `Start ${meta.label}`}
         </button>
       </div>
     </div>

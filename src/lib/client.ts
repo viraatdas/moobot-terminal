@@ -1,9 +1,13 @@
 // WebSocket client for the moobot sidecar.
 
+export type LensType = "research" | "pulse" | "scout" | "exposure" | "lattice" | "trade";
+
 export interface ResearchTab {
   id: string;
+  type: LensType;
   topic: string;
   notes: string;
+  refs: string[];
   intervalMinutes: number;
   paused: boolean;
   createdAt: string;
@@ -13,6 +17,18 @@ export interface ResearchTab {
   sessionId: string | null;
   runCount: number;
 }
+
+export const LENS_META: Record<
+  LensType,
+  { label: string; glyph: string; blurb: string; hasTopic: boolean }
+> = {
+  research: { label: "Research", glyph: "◎", blurb: "Deep dive on a topic — living thesis + proposals", hasTopic: true },
+  pulse: { label: "Pulse", glyph: "◇", blurb: "Live heartbeat — what's moving in your book right now", hasTopic: true },
+  scout: { label: "Scout", glyph: "◆", blurb: "Discovery — brings you new setups unprompted", hasTopic: true },
+  exposure: { label: "Exposure", glyph: "▦", blurb: "Risk — net delta, scenarios over your book", hasTopic: false },
+  lattice: { label: "Lattice", glyph: "⬡", blurb: "Correlation map across all your holdings", hasTopic: false },
+  trade: { label: "Trade", glyph: "▲", blurb: "Turn intent + @other tabs into trade proposals", hasTopic: true },
+};
 
 export interface ResearchState {
   sentiment?: "bullish" | "bearish" | "neutral";

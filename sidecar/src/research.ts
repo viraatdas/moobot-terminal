@@ -9,42 +9,16 @@ import {
   RESEARCH_DISALLOWED_TOOLS,
 } from "./config.ts";
 import type { PluginManager } from "./plugins.ts";
+import { LENSES, LENS_OUTPUT, type LensTab, type LensType } from "./lenses.ts";
 
-export interface ResearchTab {
-  id: string;
-  topic: string;
-  /** Extra guidance: sources to favor, angle, constraints. */
-  notes: string;
-  intervalMinutes: number; // 0 = manual only
-  paused: boolean;
-  createdAt: string;
-  lastRunAt: string | null;
-  lastRunStatus: "idle" | "running" | "ok" | "error";
-  lastError: string | null;
-  sessionId: string | null;
-  runCount: number;
-}
+// Back-compat alias: tabs are now typed lenses.
+export type ResearchTab = LensTab;
 
 export interface ResearchEvent {
   tabId: string;
   kind: "run-started" | "activity" | "run-finished" | "run-error" | "findings-updated";
   text?: string;
 }
-
-const FIRST_RUN_PROMPT = (tab: ResearchTab) => `You are a research analyst inside Moobot Terminal, a personal trading terminal. Your working directory is your dedicated workspace for this research topic.
-
-RESEARCH TOPIC: ${tab.topic}
-${tab.notes ? `OPERATOR NOTES: ${tab.notes}` : ""}
-
-Your job, every run:
-1. Research the topic using web search, web fetch (news, SEC EDGAR at https://efts.sec.gov/LATEST/search-index?q= and https://www.sec.gov/cgi-bin/browse-edgar, company IR pages), and Robinhood market data tools (quotes, search).
-2. Maintain ./findings.md as a LIVING DOCUMENT — not a log. Structure: "## Thesis" (current view, updated each run), "## Key Signals" (dated bullets, newest first, prune stale ones), "## Risks", "## Watch Next" (what to check next run). Keep it under ~200 lines; rewrite rather than append.
-3. Maintain ./state.json with {"sentiment": "bullish"|"bearish"|"neutral", "conviction": 1-10, "headline": "<one-line current take>", "updatedAt": "<iso date>"}.
-4. ONLY if the evidence this run materially supports a trade, write a proposal file ./proposals/<short-slug>.json with: {"symbol": "...", "side": "buy"|"sell", "quantity": <number>, "orderType": "market"|"limit", "limitPrice": <number or null>, "thesis": "<3-5 sentences citing the specific evidence>", "confidence": 1-10, "timeHorizon": "<e.g. 2 weeks>"}. Most runs should NOT produce a proposal. You cannot place orders; a human reviews every proposal.
-
-Be concrete: numbers, dates, filings, price levels. No filler. Do the first research pass now.`;
-
-const LOOP_PROMPT = `New research iteration. Re-check the topic: what changed since last run (news, filings, price action, sentiment)? Update ./findings.md and ./state.json per your standing instructions. Only write a proposal file if evidence materially supports a trade now.`;
 
 interface RunningProc {
   child: ChildProcess;
@@ -79,6 +53,9 @@ export class ResearchManager {
         const tab = JSON.parse(
           fs.readFileSync(this.configPath(entry), "utf8"),
         ) as ResearchTab;
+        // Migrate pre-lens tabs.
+        if (!tab.type) tab.type = "research";
+        if (!tab.refs) tab.refs = [];
         if (tab.lastRunStatus === "running") tab.lastRunStatus = "idle";
         this.tabs.set(tab.id, tab);
       } catch {
@@ -102,10 +79,28 @@ export class ResearchManager {
     return this.tabs.get(id);
   }
 
+  /** Raw lens output files (per-type JSON/markdown the UI surface renders). */
+  lensData(id: string): Record<string, unknown> {
+    const tab = this.tabs.get(id);
+    if (!tab) return {};
+    const dir = this.tabDir(id);
+    const out: Record<string, unknown> = {};
+    for (const file of LENS_OUTPUT[tab.type] ?? []) {
+      try {
+        const raw = fs.readFileSync(path.join(dir, file), "utf8");
+        out[file] = file.endsWith(".json") ? JSON.parse(raw) : raw;
+      } catch {
+        out[file] = null;
+      }
+    }
+    return out;
+  }
+
   findings(id: string): {
     markdown: string;
     state: unknown;
     panels: Array<{ plugin: string; title: string; items: unknown[] }>;
+    lens: Record<string, unknown>;
   } {
     const dir = this.tabDir(id);
     let markdown = "";
@@ -135,14 +130,22 @@ export class ResearchManager {
         } catch {}
       }
     } catch {}
-    return { markdown, state, panels };
+    return { markdown, state, panels, lens: this.lensData(id) };
   }
 
-  create(topic: string, notes = "", intervalMinutes = 30): ResearchTab {
+  create(
+    topic: string,
+    notes = "",
+    intervalMinutes = 30,
+    type: LensType = "research",
+    refs: string[] = [],
+  ): ResearchTab {
     const tab: ResearchTab = {
       id: crypto.randomUUID().slice(0, 8),
+      type,
       topic,
       notes,
+      refs,
       intervalMinutes,
       paused: false,
       createdAt: new Date().toISOString(),
@@ -160,13 +163,37 @@ export class ResearchManager {
     return tab;
   }
 
-  update(id: string, patch: Partial<Pick<ResearchTab, "topic" | "notes" | "intervalMinutes" | "paused">>) {
+  update(
+    id: string,
+    patch: Partial<Pick<ResearchTab, "topic" | "notes" | "intervalMinutes" | "paused" | "refs">>,
+  ) {
     const tab = this.tabs.get(id);
     if (!tab) throw new Error(`No research tab ${id}`);
     Object.assign(tab, patch);
     this.persist(tab);
     this.schedule(tab);
     return tab;
+  }
+
+  /** For trade lenses: gather referenced tabs' latest outputs into the prompt. */
+  private buildRefContext(tab: ResearchTab): string {
+    if (!tab.refs?.length) return "";
+    const parts: string[] = [];
+    for (const refId of tab.refs) {
+      const ref = this.tabs.get(refId);
+      if (!ref) continue;
+      const data = this.lensData(refId);
+      let body = "";
+      for (const [file, content] of Object.entries(data)) {
+        if (content == null) continue;
+        const text = typeof content === "string" ? content : JSON.stringify(content);
+        body += `\n  [${file}]: ${text.slice(0, 1500)}`;
+      }
+      parts.push(`### @${ref.topic} (${LENSES[ref.type]?.label ?? ref.type})${body || "\n  (no output yet)"}`);
+    }
+    return parts.length
+      ? `REFERENCED LENSES (their latest analysis):\n${parts.join("\n\n")}`
+      : "";
   }
 
   remove(id: string) {
@@ -202,10 +229,22 @@ export class ResearchManager {
     this.onEvent?.({ tabId: id, kind: "run-started" });
 
     const isFirst = tab.sessionId === null;
+    const def = LENSES[tab.type] ?? LENSES.research;
+    const refContext = this.buildRefContext(tab);
+    const base = isFirst
+      ? def.firstPrompt(tab, refContext)
+      : def.loopPrompt(tab, refContext);
+    // Plugins (sources) only apply to research-style lenses that browse.
     const prompt =
-      (isFirst ? FIRST_RUN_PROMPT(tab) : LOOP_PROMPT) + this.plugins.promptFragment();
+      tab.type === "research" || tab.type === "trade"
+        ? base + this.plugins.promptFragment()
+        : base;
     const allowedTools = [
-      ...new Set([...RESEARCH_ALLOWED_TOOLS, ...this.plugins.extraAllowedTools()]),
+      ...new Set([
+        ...RESEARCH_ALLOWED_TOOLS,
+        ...def.extraTools,
+        ...this.plugins.extraAllowedTools(),
+      ]),
     ];
     const args = [
       "-p",

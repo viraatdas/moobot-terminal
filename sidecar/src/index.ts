@@ -177,8 +177,8 @@ const handlers: Record<string, Handler> = {
     return plugins.list();
   },
   "research.list": () => research.list(),
-  "research.create": ({ topic, notes, intervalMinutes }) =>
-    research.create(topic, notes ?? "", intervalMinutes ?? 30),
+  "research.create": ({ topic, notes, intervalMinutes, type, refs }) =>
+    research.create(topic, notes ?? "", intervalMinutes ?? 30, type ?? "research", refs ?? []),
   "research.update": ({ id, ...patch }) => research.update(id, patch),
   "research.remove": ({ id }) => {
     research.remove(id);
