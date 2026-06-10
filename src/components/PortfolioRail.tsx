@@ -7,6 +7,7 @@ import {
   type Position,
   type RestStatus,
 } from "../lib/client";
+import { ChainViewer } from "./ChainViewer";
 
 interface Props {
   snapshot: AccountSnapshot | null;
@@ -25,6 +26,7 @@ export function PortfolioRail({
   onConnected,
 }: Props) {
   const [showConnect, setShowConnect] = useState(false);
+  const [chainSymbol, setChainSymbol] = useState<string | null>(null);
 
   const pf = snapshot?.portfolio;
   const needsToken = !restStatus.hasToken;
@@ -49,13 +51,20 @@ export function PortfolioRail({
             {pf.pnl >= 0 ? "▲" : "▼"} {fmtMoney(Math.abs(pf.pnl))} ({fmtPct(pf.pnlPercent)}) today
           </div>
         )}
-        <div className="mt-2 flex gap-4 text-[10px] text-ink-faint">
+        <div className="mt-2 flex items-center gap-4 text-[10px] text-ink-faint">
           {pf && <span className="font-data">cash {fmtMoney(pf.cash)}</span>}
           {agenticBuyingPower !== null && (
             <span className="font-data" title="Buying power on the agentic trading account">
               tradeable {fmtMoney(agenticBuyingPower)}
             </span>
           )}
+          <div className="flex-1" />
+          <button
+            onClick={() => setChainSymbol("")}
+            className="rounded-sm border border-hairline px-2 py-0.5 text-[10px] text-ink-dim hover:border-amber/50 hover:text-amber"
+          >
+            ⚡ Options chain
+          </button>
         </div>
       </div>
 
@@ -86,12 +95,23 @@ export function PortfolioRail({
         />
       )}
 
+      {chainSymbol !== null && (
+        <ChainViewer
+          initialSymbol={chainSymbol || undefined}
+          onClose={() => setChainSymbol(null)}
+        />
+      )}
+
       {/* positions */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {snapshot && (
           <>
             <Section title="Stocks" positions={snapshot.equities} />
-            <Section title="Options" positions={snapshot.options} />
+            <Section
+              title="Options"
+              positions={snapshot.options}
+              onOpenChain={(sym) => setChainSymbol(sym)}
+            />
             <Section title="Crypto" positions={snapshot.crypto} />
             {snapshot.equities.length === 0 &&
               snapshot.options.length === 0 &&
@@ -110,7 +130,15 @@ export function PortfolioRail({
   );
 }
 
-function Section({ title, positions }: { title: string; positions: Position[] }) {
+function Section({
+  title,
+  positions,
+  onOpenChain,
+}: {
+  title: string;
+  positions: Position[];
+  onOpenChain?: (symbol: string) => void;
+}) {
   if (positions.length === 0) return null;
   const total = positions.reduce((s, p) => s + p.value, 0);
   return (
@@ -121,14 +149,14 @@ function Section({ title, positions }: { title: string; positions: Position[] })
       </div>
       <div className="px-2 pb-2">
         {positions.map((p, i) => (
-          <PositionRow key={`${p.symbol}-${i}`} p={p} />
+          <PositionRow key={`${p.symbol}-${i}`} p={p} onOpenChain={onOpenChain} />
         ))}
       </div>
     </div>
   );
 }
 
-function PositionRow({ p }: { p: Position }) {
+function PositionRow({ p, onOpenChain }: { p: Position; onOpenChain?: (symbol: string) => void }) {
   const label =
     p.kind === "option"
       ? `${p.symbol} ${p.side?.toUpperCase()}${p.strike != null ? ` ${p.strike}` : ""}`
@@ -140,7 +168,12 @@ function PositionRow({ p }: { p: Position }) {
         }`
       : `${p.quantity} ${p.kind === "crypto" ? "" : "sh"} @ ${fmtMoney(p.averagePrice)}`;
   return (
-    <div className="flex items-center justify-between rounded-sm px-2 py-1.5 hover:bg-panel">
+    <div
+      onClick={() => onOpenChain?.(p.symbol)}
+      className={`flex items-center justify-between rounded-sm px-2 py-1.5 hover:bg-panel ${
+        onOpenChain ? "cursor-pointer" : ""
+      }`}
+    >
       <div className="min-w-0">
         <div className="font-data truncate text-[12px] font-semibold text-ink">{label}</div>
         <div className="font-data truncate text-[9.5px] text-ink-faint">{sub}</div>

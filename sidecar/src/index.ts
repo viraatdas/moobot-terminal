@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { ensureDirs, WS_PORT } from "./config.ts";
 import { RobinhoodGateway } from "./robinhood.ts";
@@ -17,25 +18,66 @@ const proposals = new ProposalQueue(rh, research);
 
 let wss: WebSocketServer | null = null;
 
+/**
+ * Local HTTP API for research agents (separate claude processes that can't use
+ * the UI WebSocket). Read-only market data backed by the REST token. Loopback
+ * only. Lets the options-research plugin curl live chains/positions.
+ */
+async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse) {
+  const url = new URL(req.url ?? "/", `http://127.0.0.1:${WS_PORT}`);
+  const send = (code: number, body: unknown) => {
+    res.writeHead(code, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body));
+  };
+  try {
+    if (url.pathname === "/health") return send(200, { ok: true });
+    if (url.pathname === "/chain") {
+      const symbol = url.searchParams.get("symbol");
+      const exp = url.searchParams.get("expiration");
+      if (!symbol) return send(400, { error: "symbol required" });
+      if (!exp) {
+        const expirations = await rhRest.call((r) => r.chainExpirations(symbol));
+        return send(200, { symbol, expirations });
+      }
+      const contracts = await rhRest.call((r) => r.chainForExpiration(symbol, exp));
+      return send(200, { symbol, expiration: exp, contracts });
+    }
+    if (url.pathname === "/positions") {
+      const acct = url.searchParams.get("account") || (await rhRest.call((r) => r.accounts()))[0];
+      const [equities, options, cryptoPos] = await Promise.all([
+        rhRest.call((r) => r.equityPositions(acct)),
+        rhRest.call((r) => r.optionPositions(acct)),
+        rhRest.call((r) => r.cryptoPositions()).catch(() => []),
+      ]);
+      return send(200, { account: acct, equities, options, crypto: cryptoPos });
+    }
+    return send(404, { error: "not found" });
+  } catch (err) {
+    return send(502, { error: String(err) });
+  }
+}
+
 function listen(attempt = 0) {
-  const server = new WebSocketServer({ host: "127.0.0.1", port: WS_PORT });
-  server.on("error", (err: NodeJS.ErrnoException) => {
+  const httpServer = http.createServer((req, res) => void handleHttp(req, res));
+  const server = new WebSocketServer({ server: httpServer });
+  httpServer.on("error", (err: NodeJS.ErrnoException) => {
     // A previous sidecar may still hold the port for a moment (app relaunch,
     // dev instance shutting down) — retry before giving up.
     if (err.code === "EADDRINUSE" && attempt < 10) {
       console.error(`[moobot-sidecar] port ${WS_PORT} in use, retry ${attempt + 1}/10`);
-      server.close();
+      httpServer.close();
       setTimeout(() => listen(attempt + 1), 2000);
       return;
     }
     console.error(`[moobot-sidecar] fatal server error: ${err}`);
     process.exit(1);
   });
-  server.on("listening", () => {
+  httpServer.on("listening", () => {
     wss = server;
-    console.log(`[moobot-sidecar] listening on ws://127.0.0.1:${WS_PORT}`);
+    console.log(`[moobot-sidecar] listening on ws+http://127.0.0.1:${WS_PORT}`);
   });
   server.on("connection", onConnection);
+  httpServer.listen(WS_PORT, "127.0.0.1");
 }
 
 function broadcast(event: string, payload: unknown) {

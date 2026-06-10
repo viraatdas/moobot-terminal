@@ -94,6 +94,29 @@ available. Panel: maintain ./panels/market-data.json with the key tickers as
   },
   {
     manifest: {
+      name: "options",
+      title: "Options",
+      description: "Live option chains (strikes, greeks, IV) via the local terminal API",
+      enabled: true,
+      allowedTools: ["Bash(curl:*)"],
+      panel: { title: "Options" },
+    },
+    instructions: `## Options chains
+Moobot Terminal exposes a local read-only API on http://127.0.0.1:4517 for live option data
+(backed by Robinhood). No auth needed; loopback only.
+- Expirations: \`curl -s "http://127.0.0.1:4517/chain?symbol=AAPL"\` → {symbol, expirations[]}
+- One expiry's strikes: \`curl -s "http://127.0.0.1:4517/chain?symbol=AAPL&expiration=2026-07-17"\`
+  → contracts[] each {strike, optionType, bid, ask, mark, delta, gamma, theta, vega, iv,
+  openInterest, volume}.
+- Held positions (all accounts): \`curl -s "http://127.0.0.1:4517/positions"\`.
+Use these to analyze setups: ATM/OTM strikes, IV level vs history, delta for directional
+exposure, OI/volume for liquidity. If the API returns {"error": ...} the user hasn't
+connected their full account yet — note that and fall back to equity analysis.
+Panel: maintain ./panels/options.json with notable contracts as
+[{"label": "<SYM strike C/P exp>", "value": "<mark>", "detail": "<delta/IV/OI>"}].`,
+  },
+  {
+    manifest: {
       name: "social-sentiment",
       title: "Social Sentiment",
       description: "Reddit and X chatter",
