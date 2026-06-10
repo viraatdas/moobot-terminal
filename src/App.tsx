@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { client, type ResearchEvent, type ResearchTab, type TradeProposal } from "./lib/client";
+import {
+  client,
+  type AccountSnapshot,
+  type ResearchEvent,
+  type ResearchTab,
+  type RestStatus,
+  type TradeProposal,
+} from "./lib/client";
 import { TitleBar } from "./components/TitleBar";
 import { PortfolioRail } from "./components/PortfolioRail";
 import { ResearchBoard } from "./components/ResearchBoard";
@@ -22,8 +29,13 @@ export default function App() {
   const [accountNumber, setAccountNumber] = useState<string | null>(
     () => localStorage.getItem("moobot.account.v2") || null,
   );
-  const [portfolio, setPortfolio] = useState<any>(null);
-  const [positions, setPositions] = useState<any[]>([]);
+  const [agenticBuyingPower, setAgenticBuyingPower] = useState<number | null>(null);
+  const [restStatus, setRestStatus] = useState<RestStatus>({
+    connected: false,
+    hasToken: false,
+    expired: false,
+  });
+  const [snapshot, setSnapshot] = useState<AccountSnapshot | null>(null);
   const [tabs, setTabs] = useState<ResearchTab[]>([]);
   const [proposals, setProposals] = useState<TradeProposal[]>([]);
   const [feed, setFeed] = useState<FeedLine[]>([]);
@@ -40,16 +52,34 @@ export default function App() {
     } catch {}
   }, []);
 
-  const refreshAccountData = useCallback(async (acct: string) => {
+  // Full-account snapshot (all positions: equities/options/crypto) via the REST layer.
+  const refreshSnapshot = useCallback(async () => {
     try {
-      const [pf, pos] = await Promise.all([
-        client.request("rh.call", { tool: "get_portfolio", args: { account_number: acct } }),
-        client.request("rh.call", { tool: "get_equity_positions", args: { account_number: acct } }),
-      ]);
-      setPortfolio(pf);
-      setPositions(Array.isArray(pos) ? pos : (pos?.positions ?? pos?.results ?? []));
+      const status: RestStatus = await client.request("rhrest.status");
+      setRestStatus(status);
+      if (!status.connected) return;
+      const snap: AccountSnapshot = await client.request("account.snapshot", {});
+      setSnapshot(snap);
+      setRestStatus(await client.request("rhrest.status"));
     } catch (err) {
-      console.error("portfolio refresh failed", err);
+      console.error("snapshot refresh failed", err);
+      try {
+        setRestStatus(await client.request("rhrest.status"));
+      } catch {}
+    }
+  }, []);
+
+  // Buying power on the agentic (tradeable) account, via the MCP.
+  const refreshAgenticBp = useCallback(async (acct: string) => {
+    try {
+      const pf: any = await client.request("rh.call", {
+        tool: "get_portfolio",
+        args: { account_number: acct },
+      });
+      const bp = Number(pf?.buying_power?.buying_power ?? pf?.buying_power);
+      setAgenticBuyingPower(Number.isFinite(bp) ? bp : null);
+    } catch {
+      setAgenticBuyingPower(null);
     }
   }, []);
 
@@ -74,6 +104,7 @@ export default function App() {
         void bootRobinhood();
         void refreshResearch();
         void refreshProposals();
+        void refreshSnapshot();
       }
     });
     const offEvent = client.onEvent((event, payload) => {
@@ -96,7 +127,14 @@ export default function App() {
       offConn();
       offEvent();
     };
-  }, [bootRobinhood, refreshProposals, refreshResearch]);
+  }, [bootRobinhood, refreshProposals, refreshResearch, refreshSnapshot]);
+
+  // poll the full-account snapshot
+  useEffect(() => {
+    if (!sidecarUp) return;
+    const t = setInterval(() => void refreshSnapshot(), 30_000);
+    return () => clearInterval(t);
+  }, [sidecarUp, refreshSnapshot]);
 
   // once authed, load accounts
   useEffect(() => {
@@ -127,13 +165,21 @@ export default function App() {
     })();
   }, [rhAuthed]);
 
-  // portfolio polling
+  // Robinhood only permits agent order placement on agentic_allowed accounts, so
+  // trades always route there regardless of which account is being viewed.
+  const tradeAccount = useMemo(() => {
+    const agentic = accounts.find((a: any) => a?.agentic_allowed);
+    const num = agentic?.account_number ?? agentic?.accountNumber ?? agentic?.number;
+    return num ? String(num) : accountNumber;
+  }, [accounts, accountNumber]);
+
+  // poll agentic buying power (the tradeable balance)
   useEffect(() => {
-    if (!rhAuthed || !accountNumber) return;
-    void refreshAccountData(accountNumber);
-    const t = setInterval(() => void refreshAccountData(accountNumber), 30_000);
+    if (!rhAuthed || !tradeAccount) return;
+    void refreshAgenticBp(tradeAccount);
+    const t = setInterval(() => void refreshAgenticBp(tradeAccount), 30_000);
     return () => clearInterval(t);
-  }, [rhAuthed, accountNumber, refreshAccountData]);
+  }, [rhAuthed, tradeAccount, refreshAgenticBp]);
 
   const connectRobinhood = useCallback(async () => {
     try {
@@ -155,14 +201,6 @@ export default function App() {
     [proposals],
   );
 
-  // Robinhood only permits agent order placement on agentic_allowed accounts, so
-  // trades always route there regardless of which account is being viewed.
-  const tradeAccount = useMemo(() => {
-    const agentic = accounts.find((a: any) => a?.agentic_allowed);
-    const num = agentic?.account_number ?? agentic?.accountNumber ?? agentic?.number;
-    return num ? String(num) : accountNumber;
-  }, [accounts, accountNumber]);
-
   return (
     <div className="flex h-full flex-col">
       <TitleBar
@@ -176,7 +214,12 @@ export default function App() {
         pendingCount={pendingCount}
       />
       <div className="grid min-h-0 flex-1 grid-cols-[300px_1fr_340px] gap-px bg-hairline">
-        <PortfolioRail portfolio={portfolio} positions={positions} rhAuthed={rhAuthed} />
+        <PortfolioRail
+          snapshot={snapshot}
+          restStatus={restStatus}
+          agenticBuyingPower={agenticBuyingPower}
+          onConnected={refreshSnapshot}
+        />
         <ResearchBoard tabs={tabs} feed={feed} onTabsChanged={refreshResearch} />
         <ProposalsRail
           proposals={proposals}

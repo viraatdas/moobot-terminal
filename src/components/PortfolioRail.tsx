@@ -1,173 +1,226 @@
 import { useState } from "react";
-import { client, fmtMoney } from "../lib/client";
+import {
+  client,
+  fmtMoney,
+  fmtPct,
+  type AccountSnapshot,
+  type Position,
+  type RestStatus,
+} from "../lib/client";
 
 interface Props {
-  portfolio: any;
-  positions: any[];
-  rhAuthed: boolean;
+  snapshot: AccountSnapshot | null;
+  restStatus: RestStatus;
+  agenticBuyingPower: number | null;
+  onConnected: () => void;
 }
 
-function num(...candidates: unknown[]): number | null {
-  for (const c of candidates) {
-    const n = Number(c);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
+const CONSOLE_SNIPPET =
+  "copy(JSON.parse(localStorage.getItem('web:auth_state')||'{}').access_token)";
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: "pos" | "neg" }) {
+export function PortfolioRail({
+  snapshot,
+  restStatus,
+  agenticBuyingPower,
+  onConnected,
+}: Props) {
+  const [showConnect, setShowConnect] = useState(false);
+
+  const pf = snapshot?.portfolio;
+  const needsToken = !restStatus.hasToken;
+  const expired = restStatus.expired;
+
   return (
-    <div>
-      <div className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">{label}</div>
-      <div
-        className={`font-data mt-0.5 text-[15px] font-semibold ${
-          accent === "pos" ? "text-pos" : accent === "neg" ? "text-neg" : "text-ink"
-        }`}
-      >
-        {value}
+    <div className="flex min-h-0 flex-col bg-bg">
+      {/* header: account value + day P&L */}
+      <div className="border-b border-hairline p-4">
+        <div className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">
+          Account value
+        </div>
+        <div className="font-data mt-0.5 text-[22px] font-semibold text-ink">
+          {pf ? fmtMoney(pf.equity) : "—"}
+        </div>
+        {pf && (
+          <div
+            className={`font-data mt-0.5 text-[12px] ${
+              pf.pnl >= 0 ? "text-pos" : "text-neg"
+            }`}
+          >
+            {pf.pnl >= 0 ? "▲" : "▼"} {fmtMoney(Math.abs(pf.pnl))} ({fmtPct(pf.pnlPercent)}) today
+          </div>
+        )}
+        <div className="mt-2 flex gap-4 text-[10px] text-ink-faint">
+          {pf && <span className="font-data">cash {fmtMoney(pf.cash)}</span>}
+          {agenticBuyingPower !== null && (
+            <span className="font-data" title="Buying power on the agentic trading account">
+              tradeable {fmtMoney(agenticBuyingPower)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* connect / reconnect states */}
+      {(needsToken || expired) && (
+        <div className="border-b border-hairline bg-amber-dim/40 p-3">
+          <div className="text-[11px] leading-snug text-amber">
+            {expired
+              ? "Robinhood session expired — reconnect to refresh positions."
+              : "Connect your full Robinhood account to see all positions, options, and crypto."}
+          </div>
+          <button
+            onClick={() => setShowConnect(true)}
+            className="mt-2 rounded-sm border border-amber/40 bg-amber-dim px-3 py-1 text-[11px] font-semibold text-amber hover:bg-amber/25"
+          >
+            {expired ? "Reconnect" : "Connect full account"}
+          </button>
+        </div>
+      )}
+
+      {showConnect && (
+        <ConnectModal
+          onClose={() => setShowConnect(false)}
+          onConnected={() => {
+            setShowConnect(false);
+            onConnected();
+          }}
+        />
+      )}
+
+      {/* positions */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {snapshot && (
+          <>
+            <Section title="Stocks" positions={snapshot.equities} />
+            <Section title="Options" positions={snapshot.options} />
+            <Section title="Crypto" positions={snapshot.crypto} />
+            {snapshot.equities.length === 0 &&
+              snapshot.options.length === 0 &&
+              snapshot.crypto.length === 0 && (
+                <div className="px-4 py-6 text-center text-[12px] text-ink-faint">
+                  No open positions in this account.
+                </div>
+              )}
+          </>
+        )}
+        {!snapshot && !needsToken && !expired && (
+          <div className="px-4 py-6 text-center text-[12px] text-ink-faint">Loading positions…</div>
+        )}
       </div>
     </div>
   );
 }
 
-export function PortfolioRail({ portfolio, positions, rhAuthed }: Props) {
-  const [query, setQuery] = useState("");
-  const [quote, setQuote] = useState<any>(null);
-  const [quoteErr, setQuoteErr] = useState<string | null>(null);
-
-  const totalValue = num(
-    portfolio?.total_value,
-    portfolio?.total_market_value,
-    portfolio?.equity_value,
-    portfolio?.market_value,
-    portfolio?.portfolio_value,
+function Section({ title, positions }: { title: string; positions: Position[] }) {
+  if (positions.length === 0) return null;
+  const total = positions.reduce((s, p) => s + p.value, 0);
+  return (
+    <div className="border-b border-hairline">
+      <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
+        <span className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">{title}</span>
+        <span className="font-data text-[10px] text-ink-faint">{fmtMoney(total)}</span>
+      </div>
+      <div className="px-2 pb-2">
+        {positions.map((p, i) => (
+          <PositionRow key={`${p.symbol}-${i}`} p={p} />
+        ))}
+      </div>
+    </div>
   );
-  const buyingPower = num(
-    portfolio?.buying_power?.buying_power,
-    portfolio?.buying_power,
-    portfolio?.cash,
-    portfolio?.cash_balance,
-  );
+}
 
-  async function lookup() {
-    const sym = query.trim().toUpperCase();
-    if (!sym) return;
-    setQuoteErr(null);
+function PositionRow({ p }: { p: Position }) {
+  const label =
+    p.kind === "option"
+      ? `${p.symbol} ${p.side?.toUpperCase()}${p.strike != null ? ` ${p.strike}` : ""}`
+      : p.symbol;
+  const sub =
+    p.kind === "option"
+      ? `${p.quantity} · ${p.expirationDate ?? ""}${
+          p.daysToExpiry != null ? ` · ${p.daysToExpiry}d` : ""
+        }`
+      : `${p.quantity} ${p.kind === "crypto" ? "" : "sh"} @ ${fmtMoney(p.averagePrice)}`;
+  return (
+    <div className="flex items-center justify-between rounded-sm px-2 py-1.5 hover:bg-panel">
+      <div className="min-w-0">
+        <div className="font-data truncate text-[12px] font-semibold text-ink">{label}</div>
+        <div className="font-data truncate text-[9.5px] text-ink-faint">{sub}</div>
+      </div>
+      <div className="ml-2 text-right">
+        <div className="font-data text-[12px] text-ink">{fmtMoney(p.value)}</div>
+        <div className={`font-data text-[9.5px] ${p.unrealizedPnl >= 0 ? "text-pos" : "text-neg"}`}>
+          {p.unrealizedPnl >= 0 ? "+" : ""}
+          {fmtMoney(p.unrealizedPnl)} ({fmtPct(p.unrealizedPnlPercent)})
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConnectModal({
+  onClose,
+  onConnected,
+}: {
+  onClose: () => void;
+  onConnected: () => void;
+}) {
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function connect() {
+    if (!token.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
     try {
-      const res = await client.request("rh.call", {
-        tool: "get_equity_quotes",
-        args: { symbols: [sym] },
-      });
-      const q = Array.isArray(res) ? res[0] : (res?.quotes?.[0] ?? res?.results?.[0] ?? res);
-      setQuote({ symbol: sym, raw: q });
-    } catch (err) {
-      setQuote(null);
-      setQuoteErr(String(err));
+      await client.request("rhrest.setToken", { token: token.trim() });
+      onConnected();
+    } catch (e) {
+      setErr(String(e));
+      setBusy(false);
     }
   }
 
   return (
-    <div className="flex min-h-0 flex-col bg-bg">
-      <div className="grid grid-cols-2 gap-4 border-b border-hairline p-4">
-        <Stat label="Portfolio" value={totalValue !== null ? fmtMoney(totalValue) : "—"} />
-        <Stat label="Buying Power" value={buyingPower !== null ? fmtMoney(buyingPower) : "—"} />
-      </div>
-
-      <div className="border-b border-hairline p-3">
-        <div className="flex gap-2">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void lookup()}
-            placeholder="Quote: AAPL"
-            className="font-data w-full rounded-sm border border-hairline bg-panel px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-faint focus:border-amber/50 focus:outline-none"
-          />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+      <div className="w-full max-w-lg rounded-md border border-hairline-2 bg-panel p-5">
+        <div className="font-wordmark text-[18px] italic text-ink">Connect full account</div>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">
+          The official agent connection can't list options or crypto holdings. To see
+          everything, paste a token from your logged-in Robinhood web session.
+        </p>
+        <ol className="mt-3 space-y-1.5 text-[12px] text-ink-dim">
+          <li>
+            1. Open <span className="text-ink">robinhood.com</span> (logged in) and open the
+            browser console (⌥⌘I).
+          </li>
+          <li>2. Paste and run this — it copies your token to the clipboard:</li>
+        </ol>
+        <code className="mt-2 block rounded-sm bg-bg px-3 py-2 font-data text-[10.5px] break-all text-amber select-all">
+          {CONSOLE_SNIPPET}
+        </code>
+        <textarea
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="Paste the token (or the full web:auth_state JSON for auto-refresh)"
+          rows={3}
+          className="mt-3 w-full resize-none rounded-sm border border-hairline bg-bg px-3 py-2 font-data text-[11px] text-ink placeholder:text-ink-faint focus:border-amber/50 focus:outline-none"
+        />
+        {err && <div className="mt-2 text-[11px] text-neg break-words">{err}</div>}
+        <div className="mt-3 flex justify-end gap-2">
           <button
-            onClick={() => void lookup()}
-            className="rounded-sm border border-hairline bg-panel px-3 text-[11px] font-medium text-ink-dim hover:border-hairline-2 hover:text-ink"
+            onClick={onClose}
+            className="rounded-sm px-3 py-1.5 text-[12px] text-ink-faint hover:text-ink"
           >
-            Go
+            Cancel
+          </button>
+          <button
+            onClick={() => void connect()}
+            disabled={!token.trim() || busy}
+            className="rounded-sm border border-amber/40 bg-amber-dim px-4 py-1.5 text-[12px] font-semibold text-amber hover:bg-amber/25 disabled:opacity-40"
+          >
+            {busy ? "Connecting…" : "Connect"}
           </button>
         </div>
-        {quote && (
-          <div className="font-data mt-2 rounded-sm bg-panel p-2.5 text-[11px] leading-relaxed text-ink-dim">
-            <div className="mb-1 flex items-baseline justify-between">
-              <span className="text-[13px] font-semibold text-ink">{quote.symbol}</span>
-              <span className="text-[13px] font-semibold text-amber">
-                {fmtMoney(
-                  num(
-                    quote.raw?.last_trade_price,
-                    quote.raw?.price,
-                    quote.raw?.last_price,
-                    quote.raw?.mark_price,
-                  ),
-                )}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>
-                bid {fmtMoney(num(quote.raw?.bid_price, quote.raw?.bid))}
-              </span>
-              <span>
-                ask {fmtMoney(num(quote.raw?.ask_price, quote.raw?.ask))}
-              </span>
-            </div>
-          </div>
-        )}
-        {quoteErr && <div className="mt-2 text-[11px] text-neg">{quoteErr}</div>}
-      </div>
-
-      <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
-        <span className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">Positions</span>
-        <span className="font-data text-[10px] text-ink-faint">{positions.length}</span>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {!rhAuthed && (
-          <div className="px-2 py-6 text-center text-[12px] text-ink-faint">
-            Connect Robinhood to load your book.
-          </div>
-        )}
-        {rhAuthed && positions.length === 0 && (
-          <div className="px-2 py-6 text-center text-[12px] text-ink-faint">No open positions.</div>
-        )}
-        {positions.map((p, i) => {
-          const sym = String(p?.symbol ?? p?.ticker ?? p?.instrument_symbol ?? "?");
-          const qty = num(p?.quantity, p?.shares, p?.position_quantity);
-          const mv = num(p?.market_value, p?.equity, p?.value);
-          const pnl = num(
-            p?.unrealized_pnl,
-            p?.total_return,
-            p?.unrealized_gain,
-            p?.todays_return,
-          );
-          return (
-            <div
-              key={`${sym}-${i}`}
-              className="flex items-center justify-between rounded-sm px-2 py-2 hover:bg-panel"
-            >
-              <div>
-                <div className="font-data text-[12.5px] font-semibold text-ink">{sym}</div>
-                <div className="font-data text-[10px] text-ink-faint">
-                  {qty !== null ? `${qty} sh` : ""}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="font-data text-[12.5px] text-ink">
-                  {mv !== null ? fmtMoney(mv) : "—"}
-                </div>
-                {pnl !== null && (
-                  <div
-                    className={`font-data text-[10px] ${pnl >= 0 ? "text-pos" : "text-neg"}`}
-                  >
-                    {pnl >= 0 ? "+" : ""}
-                    {fmtMoney(pnl)}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
       </div>
     </div>
   );

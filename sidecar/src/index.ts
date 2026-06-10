@@ -5,10 +5,12 @@ import { RobinhoodGateway } from "./robinhood.ts";
 import { ResearchManager } from "./research.ts";
 import { ProposalQueue } from "./proposals.ts";
 import { PluginManager } from "./plugins.ts";
+import { RobinhoodRestAuth } from "./rh-rest-auth.ts";
 
 ensureDirs();
 
 const rh = new RobinhoodGateway();
+const rhRest = new RobinhoodRestAuth();
 const plugins = new PluginManager();
 const research = new ResearchManager(plugins);
 const proposals = new ProposalQueue(rh, research);
@@ -69,6 +71,28 @@ const handlers: Record<string, Handler> = {
       throw new Error(`${tool} is not callable via rh.call — use the approval flow`);
     }
     return rh.callTool(tool, args ?? {});
+  },
+  // Full-account REST connection (read + market data).
+  "rhrest.status": () => rhRest.status(),
+  "rhrest.setToken": ({ token }) => rhRest.setToken(token),
+  "account.snapshot": async ({ accountNumber }) => {
+    const acct = accountNumber || (await rhRest.call((r) => r.accounts()))[0];
+    if (!acct) throw new Error("No account available");
+    const [portfolio, equities, options, cryptoPos] = await Promise.all([
+      rhRest.call((r) => r.portfolio(acct)),
+      rhRest.call((r) => r.equityPositions(acct)),
+      rhRest.call((r) => r.optionPositions(acct)),
+      rhRest.call((r) => r.cryptoPositions()).catch(() => []),
+    ]);
+    return { accountNumber: acct, portfolio, equities, options, crypto: cryptoPos };
+  },
+  "options.chain": async ({ symbol, expiration }) => {
+    if (!expiration) {
+      const exps = await rhRest.call((r) => r.chainExpirations(symbol));
+      return { expirations: exps, contracts: [] };
+    }
+    const contracts = await rhRest.call((r) => r.chainForExpiration(symbol, expiration));
+    return { expirations: [expiration], contracts };
   },
   "plugins.list": () => plugins.list(),
   "plugins.setEnabled": ({ name, enabled }) => {

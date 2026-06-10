@@ -45,6 +45,67 @@ export interface ResearchEvent {
   text?: string;
 }
 
+export interface Position {
+  kind: "equity" | "option" | "crypto";
+  symbol: string;
+  title?: string;
+  side?: "call" | "put";
+  strike?: number | null;
+  expirationDate?: string | null;
+  daysToExpiry?: number | null;
+  quantity: number;
+  averagePrice: number;
+  currentPrice?: number;
+  markPrice?: number | null;
+  value: number;
+  unrealizedPnl: number;
+  unrealizedPnlPercent: number;
+  delta?: number | null;
+  iv?: number | null;
+}
+
+export interface PortfolioSnapshot {
+  accountNumber: string;
+  equity: number;
+  cash: number;
+  invested: number;
+  pnl: number;
+  pnlPercent: number;
+  previousClose: number;
+  asOf: number;
+}
+
+export interface AccountSnapshot {
+  accountNumber: string;
+  portfolio: PortfolioSnapshot;
+  equities: Position[];
+  options: Position[];
+  crypto: Position[];
+}
+
+export interface RestStatus {
+  connected: boolean;
+  hasToken: boolean;
+  expired: boolean;
+}
+
+export interface OptionContract {
+  symbol: string;
+  expirationDate: string;
+  strike: number;
+  optionType: "call" | "put";
+  bid: number | null;
+  ask: number | null;
+  mark: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  iv: number | null;
+  openInterest: number | null;
+  volume: number | null;
+}
+
 type EventHandler = (event: string, payload: any) => void;
 
 class SidecarClient {
