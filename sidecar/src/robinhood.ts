@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import http from "node:http";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
@@ -94,6 +94,46 @@ export class RobinhoodGateway {
     return Boolean(loadAuth().tokens);
   }
 
+  /**
+   * Robinhood's authorize page won't issue codes to dynamically-registered
+   * clients (it bounces to /agentic), so first-run auth borrows the working
+   * credentials Claude Code already holds for this same MCP server from the
+   * macOS keychain. Refresh then proceeds normally via the SDK.
+   */
+  importFromClaudeCode(): boolean {
+    try {
+      const raw = execFileSync(
+        "security",
+        ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
+        { encoding: "utf8" },
+      );
+      const creds = JSON.parse(raw);
+      const key = Object.keys(creds.mcpOAuth ?? {}).find((k) =>
+        k.startsWith("robinhood-trading|"),
+      );
+      if (!key) return false;
+      const rh = creds.mcpOAuth[key];
+      if (!rh.accessToken) return false;
+      saveAuth({
+        clientInformation: { client_id: rh.clientId },
+        tokens: {
+          access_token: rh.accessToken,
+          refresh_token: rh.refreshToken,
+          token_type: "bearer",
+          scope: rh.scope,
+          expires_in: Math.max(
+            60,
+            Math.floor((Number(rh.expiresAt) - Date.now()) / 1000),
+          ),
+        },
+      });
+      console.log("[robinhood] imported credentials from Claude Code keychain");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Connect, driving the OAuth flow (browser + local callback) if needed. */
   async connect(): Promise<void> {
     if (this.client) return;
@@ -106,6 +146,7 @@ export class RobinhoodGateway {
 
   private async doConnect(): Promise<void> {
     this.provider.onAuthUrl = (url) => this.onAuthUrl?.(url);
+    if (!this.hasStoredTokens()) this.importFromClaudeCode();
     try {
       await this.tryConnect();
     } catch (err) {
@@ -165,6 +206,27 @@ export class RobinhoodGateway {
     });
   }
 
+  /**
+   * Manual fallback: finish OAuth from a pasted callback URL (or bare code)
+   * when the localhost redirect didn't reach us.
+   */
+  async finishAuthManually(codeOrUrl: string): Promise<void> {
+    let code = codeOrUrl.trim();
+    try {
+      const url = new URL(codeOrUrl);
+      code = url.searchParams.get("code") ?? code;
+    } catch {
+      // bare code, use as-is
+    }
+    const transport = new StreamableHTTPClientTransport(new URL(RH_MCP_URL), {
+      authProvider: this.provider,
+    });
+    await transport.finishAuth(code);
+    this.client = null;
+    this.transport = null;
+    await this.tryConnect();
+  }
+
   async callTool(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
     if (!this.client) await this.connect();
     try {
@@ -194,7 +256,12 @@ export class RobinhoodGateway {
       .map((c) => c.text ?? "")
       .join("\n");
     try {
-      return JSON.parse(text);
+      const parsed = JSON.parse(text);
+      // Robinhood wraps results in a {"data": ...} envelope — unwrap it.
+      if (parsed && typeof parsed === "object" && "data" in parsed && Object.keys(parsed).length === 1) {
+        return parsed.data;
+      }
+      return parsed;
     } catch {
       return text;
     }

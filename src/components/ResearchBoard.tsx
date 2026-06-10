@@ -3,6 +3,20 @@ import { marked } from "marked";
 import { client, type ResearchState, type ResearchTab } from "../lib/client";
 import type { FeedLine } from "../App";
 
+interface PanelItem {
+  label?: string;
+  value?: string;
+  detail?: string;
+  url?: string;
+  tone?: "pos" | "neg" | "neutral";
+}
+
+interface Panel {
+  plugin: string;
+  title: string;
+  items: PanelItem[];
+}
+
 interface Props {
   tabs: ResearchTab[];
   feed: FeedLine[];
@@ -17,10 +31,11 @@ const SENTIMENT_STYLE: Record<string, string> = {
 
 export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [findings, setFindings] = useState<{ markdown: string; state: ResearchState | null }>({
-    markdown: "",
-    state: null,
-  });
+  const [findings, setFindings] = useState<{
+    markdown: string;
+    state: ResearchState | null;
+    panels: Panel[];
+  }>({ markdown: "", state: null, panels: [] });
   const [creating, setCreating] = useState(false);
 
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null;
@@ -140,6 +155,13 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
           {/* body: findings + live feed */}
           <div className="grid min-h-0 flex-1 grid-cols-[1fr_240px]">
             <div className="findings min-h-0 overflow-y-auto px-6 py-4">
+              {findings.panels.length > 0 && (
+                <div className="mb-4 grid grid-cols-2 gap-2.5">
+                  {findings.panels.map((panel) => (
+                    <PluginPanel key={panel.plugin} panel={panel} />
+                  ))}
+                </div>
+              )}
               {findings.markdown ? (
                 <div dangerouslySetInnerHTML={{ __html: marked.parse(findings.markdown) }} />
               ) : (
@@ -176,6 +198,52 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const TONE_CLS: Record<string, string> = {
+  pos: "text-pos",
+  neg: "text-neg",
+  neutral: "text-ink-dim",
+};
+
+function PluginPanel({ panel }: { panel: Panel }) {
+  return (
+    <div className="rounded-sm border border-hairline bg-panel p-3">
+      <div className="mb-2 text-[9.5px] tracking-[0.16em] uppercase text-ink-faint">
+        {panel.title}
+      </div>
+      <div className="space-y-1.5">
+        {panel.items.map((item, i) => (
+          <div key={i} className="text-[11px] leading-snug">
+            <div className="flex items-baseline justify-between gap-2">
+              {item.label && (
+                <span className="font-data shrink-0 text-[9.5px] text-ink-faint">
+                  {item.label}
+                </span>
+              )}
+              <span className={`min-w-0 flex-1 truncate text-right ${TONE_CLS[item.tone ?? "neutral"] ?? "text-ink-dim"}`}>
+                {item.url ? (
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="!text-inherit !no-underline hover:!underline"
+                  >
+                    {item.value}
+                  </a>
+                ) : (
+                  item.value
+                )}
+              </span>
+            </div>
+            {item.detail && (
+              <div className="truncate text-[10px] text-ink-faint">{item.detail}</div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -226,9 +294,21 @@ function NewTabForm({ onDone }: { onDone: (createdId: string | null) => void }) 
   const [notes, setNotes] = useState("");
   const [interval, setIntervalMin] = useState(30);
   const [busy, setBusy] = useState(false);
+  const [plugins, setPlugins] = useState<
+    Array<{ name: string; title: string; enabled: boolean }>
+  >([]);
   const ref = useRef<HTMLInputElement>(null);
 
-  useEffect(() => ref.current?.focus(), []);
+  useEffect(() => {
+    ref.current?.focus();
+    client.request("plugins.list").then(setPlugins).catch(() => {});
+  }, []);
+
+  async function togglePlugin(name: string, enabled: boolean) {
+    try {
+      setPlugins(await client.request("plugins.setEnabled", { name, enabled }));
+    } catch {}
+  }
 
   async function create() {
     if (!topic.trim() || busy) return;
@@ -279,6 +359,27 @@ function NewTabForm({ onDone }: { onDone: (createdId: string | null) => void }) 
         rows={2}
         className="mt-2 w-full resize-none rounded-sm border border-hairline bg-bg px-3 py-2 text-[12px] text-ink placeholder:text-ink-faint focus:border-amber/50 focus:outline-none"
       />
+      {plugins.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[9.5px] tracking-[0.16em] uppercase text-ink-faint">
+            Sources
+          </span>
+          {plugins.map((p) => (
+            <button
+              key={p.name}
+              onClick={() => void togglePlugin(p.name, !p.enabled)}
+              title={p.enabled ? "Click to disable" : "Click to enable"}
+              className={`rounded-sm border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                p.enabled
+                  ? "border-amber/35 bg-amber-dim text-amber"
+                  : "border-hairline text-ink-faint hover:text-ink-dim"
+              }`}
+            >
+              {p.title}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="mt-2 flex justify-end gap-2">
         <button
           onClick={() => onDone(null)}

@@ -36,17 +36,17 @@ export function PortfolioRail({ portfolio, positions, rhAuthed }: Props) {
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
 
   const totalValue = num(
-    portfolio?.total_market_value,
-    portfolio?.market_value,
     portfolio?.total_value,
-    portfolio?.equity,
+    portfolio?.total_market_value,
+    portfolio?.equity_value,
+    portfolio?.market_value,
     portfolio?.portfolio_value,
   );
   const buyingPower = num(
+    portfolio?.buying_power?.buying_power,
     portfolio?.buying_power,
-    portfolio?.cash?.buying_power,
-    portfolio?.cash_balance,
     portfolio?.cash,
+    portfolio?.cash_balance,
   );
 
   async function lookup() {

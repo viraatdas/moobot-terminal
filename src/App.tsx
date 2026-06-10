@@ -107,8 +107,14 @@ export default function App() {
         const list = Array.isArray(res) ? res : (res?.accounts ?? res?.results ?? []);
         setAccounts(list);
         if (!accountNumber && list.length > 0) {
+          // Prefer the agentic-enabled account (the only one agents can trade in),
+          // then Robinhood's default, then the first.
+          const preferred =
+            list.find((a: any) => a?.agentic_allowed) ??
+            list.find((a: any) => a?.is_default) ??
+            list[0];
           const num =
-            list[0]?.account_number ?? list[0]?.accountNumber ?? list[0]?.number ?? null;
+            preferred?.account_number ?? preferred?.accountNumber ?? preferred?.number ?? null;
           if (num) {
             setAccountNumber(String(num));
             localStorage.setItem("moobot.account", String(num));

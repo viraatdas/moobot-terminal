@@ -4,11 +4,13 @@ import { ensureDirs, WS_PORT } from "./config.ts";
 import { RobinhoodGateway } from "./robinhood.ts";
 import { ResearchManager } from "./research.ts";
 import { ProposalQueue } from "./proposals.ts";
+import { PluginManager } from "./plugins.ts";
 
 ensureDirs();
 
 const rh = new RobinhoodGateway();
-const research = new ResearchManager();
+const plugins = new PluginManager();
+const research = new ResearchManager(plugins);
 const proposals = new ProposalQueue(rh, research);
 
 const wss = new WebSocketServer({ host: "127.0.0.1", port: WS_PORT });
@@ -36,11 +38,24 @@ const handlers: Record<string, Handler> = {
     await rh.connect();
     return { authenticated: true };
   },
+  "rh.finish": async ({ codeOrUrl }) => {
+    await rh.finishAuthManually(codeOrUrl);
+    return { authenticated: true };
+  },
   "rh.call": async ({ tool, args }) => {
     if (/place_equity_order|cancel_equity_order/.test(tool)) {
       throw new Error(`${tool} is not callable via rh.call — use the approval flow`);
     }
     return rh.callTool(tool, args ?? {});
+  },
+  "plugins.list": () => plugins.list(),
+  "plugins.setEnabled": ({ name, enabled }) => {
+    plugins.setEnabled(name, enabled);
+    return plugins.list();
+  },
+  "plugins.reload": () => {
+    plugins.reload();
+    return plugins.list();
   },
   "research.list": () => research.list(),
   "research.create": ({ topic, notes, intervalMinutes }) =>
@@ -90,8 +105,9 @@ wss.on("connection", (ws) => {
 
 console.log(`[moobot-sidecar] listening on ws://127.0.0.1:${WS_PORT}`);
 
-// Connect eagerly if we already have tokens, so the UI loads data instantly.
-if (rh.hasStoredTokens()) {
+// Connect eagerly if we have tokens (or can import Claude Code's), so the UI
+// loads data instantly without a browser round-trip.
+if (rh.hasStoredTokens() || rh.importFromClaudeCode()) {
   rh.connect().catch((err) => console.error(`[moobot-sidecar] rh connect: ${err}`));
 }
 

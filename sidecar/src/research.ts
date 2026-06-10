@@ -7,6 +7,7 @@ import {
   RESEARCH_ALLOWED_TOOLS,
   RESEARCH_DISALLOWED_TOOLS,
 } from "./config.ts";
+import type { PluginManager } from "./plugins.ts";
 
 export interface ResearchTab {
   id: string;
@@ -52,10 +53,12 @@ export class ResearchManager {
   private tabs = new Map<string, ResearchTab>();
   private running = new Map<string, RunningProc>();
   private timers = new Map<string, ReturnType<typeof setInterval>>();
+  private plugins: PluginManager;
   onEvent?: (ev: ResearchEvent) => void;
   onProposalsMaybeChanged?: (tabId: string) => void;
 
-  constructor() {
+  constructor(plugins: PluginManager) {
+    this.plugins = plugins;
     this.loadAll();
     for (const tab of this.tabs.values()) this.schedule(tab);
   }
@@ -98,7 +101,11 @@ export class ResearchManager {
     return this.tabs.get(id);
   }
 
-  findings(id: string): { markdown: string; state: unknown } {
+  findings(id: string): {
+    markdown: string;
+    state: unknown;
+    panels: Array<{ plugin: string; title: string; items: unknown[] }>;
+  } {
     const dir = this.tabDir(id);
     let markdown = "";
     let state: unknown = null;
@@ -108,7 +115,26 @@ export class ResearchManager {
     try {
       state = JSON.parse(fs.readFileSync(path.join(dir, "state.json"), "utf8"));
     } catch {}
-    return { markdown, state };
+    const panels: Array<{ plugin: string; title: string; items: unknown[] }> = [];
+    const manifests = new Map(this.plugins.list().map((p) => [p.name, p]));
+    try {
+      for (const file of fs.readdirSync(path.join(dir, "panels"))) {
+        if (!file.endsWith(".json")) continue;
+        const name = file.replace(/\.json$/, "");
+        try {
+          const items = JSON.parse(
+            fs.readFileSync(path.join(dir, "panels", file), "utf8"),
+          );
+          if (!Array.isArray(items)) continue;
+          panels.push({
+            plugin: name,
+            title: manifests.get(name)?.panel?.title ?? name,
+            items: items.slice(0, 8),
+          });
+        } catch {}
+      }
+    } catch {}
+    return { markdown, state, panels };
   }
 
   create(topic: string, notes = "", intervalMinutes = 30): ResearchTab {
@@ -175,7 +201,11 @@ export class ResearchManager {
     this.onEvent?.({ tabId: id, kind: "run-started" });
 
     const isFirst = tab.sessionId === null;
-    const prompt = isFirst ? FIRST_RUN_PROMPT(tab) : LOOP_PROMPT;
+    const prompt =
+      (isFirst ? FIRST_RUN_PROMPT(tab) : LOOP_PROMPT) + this.plugins.promptFragment();
+    const allowedTools = [
+      ...new Set([...RESEARCH_ALLOWED_TOOLS, ...this.plugins.extraAllowedTools()]),
+    ];
     const args = [
       "-p",
       prompt,
@@ -183,7 +213,7 @@ export class ResearchManager {
       "stream-json",
       "--verbose",
       "--allowedTools",
-      RESEARCH_ALLOWED_TOOLS.join(","),
+      allowedTools.join(","),
       "--disallowedTools",
       RESEARCH_DISALLOWED_TOOLS.join(","),
       "--permission-mode",

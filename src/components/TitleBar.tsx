@@ -76,6 +76,7 @@ export function TitleBar({
             return (
               <option key={num} value={num}>
                 {num}
+                {a?.agentic_allowed ? " · agentic" : ""}
               </option>
             );
           })}
