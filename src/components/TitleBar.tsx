@@ -9,6 +9,13 @@ interface Props {
   pendingCount: number;
 }
 
+/** Friendly account name: the default (funded) account is the "main account". */
+function accountLabel(a: any, num: string): string {
+  if (a?.is_default) return `Main account · ${num}`;
+  if (a?.agentic_allowed) return `Agentic · ${num}`;
+  return num;
+}
+
 function Dot({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
@@ -75,8 +82,7 @@ export function TitleBar({
             const num = String(a?.account_number ?? a?.accountNumber ?? a?.number ?? i);
             return (
               <option key={num} value={num}>
-                {num}
-                {a?.agentic_allowed ? " · agentic" : ""}
+                {accountLabel(a, num)}
               </option>
             );
           })}
@@ -84,7 +90,9 @@ export function TitleBar({
       )}
 
       {rhAuthed && accounts.length <= 1 && accountNumber && (
-        <span className="font-data text-[11px] text-ink-faint">{accountNumber}</span>
+        <span className="font-data text-[11px] text-ink-faint">
+          {accountLabel(accounts[0], accountNumber)}
+        </span>
       )}
     </div>
   );
