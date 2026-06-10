@@ -55,5 +55,6 @@ Three processes:
 ## Distribution
 
 Homebrew cask `viraatdas/tap/moobot-terminal` pointing at GitHub release DMGs.
-The app is unsigned — the cask should handle quarantine removal, or users
-right-click-open.
+Release DMGs are Developer ID signed, notarized, and stapled. Use
+`pnpm release:mac` with the `moobot-terminal` notarytool Keychain profile to
+produce a Gatekeeper-clean DMG before updating the cask checksum.
