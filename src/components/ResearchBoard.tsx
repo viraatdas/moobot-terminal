@@ -94,6 +94,16 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
         >
           +
         </button>
+        <div className="flex-1" />
+        {tabs.length > 0 && (
+          <button
+            onClick={() => void client.request("research.runAll")}
+            className="shrink-0 px-3 text-[10px] tracking-wide text-ink-faint uppercase hover:text-amber"
+            title="Run every unpaused research tab now"
+          >
+            Run all
+          </button>
+        )}
       </div>
 
       {creating && (

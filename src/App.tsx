@@ -11,6 +11,7 @@ import { TitleBar } from "./components/TitleBar";
 import { PortfolioRail } from "./components/PortfolioRail";
 import { ResearchBoard } from "./components/ResearchBoard";
 import { ProposalsRail } from "./components/ProposalsRail";
+import { AlertsModal } from "./components/AlertsModal";
 
 export interface FeedLine {
   id: number;
@@ -39,6 +40,7 @@ export default function App() {
   const [tabs, setTabs] = useState<ResearchTab[]>([]);
   const [proposals, setProposals] = useState<TradeProposal[]>([]);
   const [feed, setFeed] = useState<FeedLine[]>([]);
+  const [showAlerts, setShowAlerts] = useState(false);
 
   const refreshResearch = useCallback(async () => {
     try {
@@ -212,6 +214,7 @@ export default function App() {
         onConnect={connectRobinhood}
         authUrl={authUrl}
         pendingCount={pendingCount}
+        onOpenAlerts={() => setShowAlerts(true)}
       />
       <div className="grid min-h-0 flex-1 grid-cols-[300px_1fr_340px] gap-px bg-hairline">
         <PortfolioRail
@@ -228,6 +231,7 @@ export default function App() {
           onChanged={refreshProposals}
         />
       </div>
+      {showAlerts && <AlertsModal onClose={() => setShowAlerts(false)} />}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { ResearchManager } from "./research.ts";
 import { ProposalQueue } from "./proposals.ts";
 import { PluginManager } from "./plugins.ts";
 import { RobinhoodRestAuth } from "./rh-rest-auth.ts";
+import { AlertManager, notify } from "./alerts.ts";
 
 ensureDirs();
 
@@ -15,6 +16,7 @@ const rhRest = new RobinhoodRestAuth();
 const plugins = new PluginManager();
 const research = new ResearchManager(plugins);
 const proposals = new ProposalQueue(rh, research);
+const alerts = new AlertManager(rh);
 
 let wss: WebSocketServer | null = null;
 
@@ -91,7 +93,24 @@ function broadcast(event: string, payload: unknown) {
 rh.onAuthUrl = (url) => broadcast("rh.auth-url", { url });
 research.onEvent = (ev) => broadcast("research", ev);
 research.onProposalsMaybeChanged = (tabId) => proposals.ingest(tabId);
-proposals.onChanged = () => broadcast("proposals.changed", { proposals: proposals.list() });
+alerts.onTriggered = (a) => broadcast("alert.triggered", { alert: a });
+
+// Notify (native + UI) when a research agent files a new pending proposal.
+let lastPendingIds = new Set(proposals.list().filter((p) => p.status === "pending").map((p) => p.id));
+proposals.onChanged = () => {
+  const list = proposals.list();
+  broadcast("proposals.changed", { proposals: list });
+  const pending = list.filter((p) => p.status === "pending");
+  for (const p of pending) {
+    if (!lastPendingIds.has(p.id)) {
+      notify(
+        `New trade proposal: ${p.side.toUpperCase()} ${p.quantity} ${p.symbol}`,
+        `from "${p.tabTopic}" · conf ${p.confidence}/10`,
+      );
+    }
+  }
+  lastPendingIds = new Set(pending.map((p) => p.id));
+};
 
 type Handler = (payload: any) => Promise<unknown> | unknown;
 
@@ -135,6 +154,18 @@ const handlers: Record<string, Handler> = {
     }
     const contracts = await rhRest.call((r) => r.chainForExpiration(symbol, expiration));
     return { expirations: [expiration], contracts };
+  },
+  "alerts.list": () => alerts.list(),
+  "alerts.create": ({ symbol, op, price, note }) =>
+    alerts.create(symbol, op, Number(price), note ?? ""),
+  "alerts.update": ({ id, ...patch }) => alerts.update(id, patch),
+  "alerts.remove": ({ id }) => {
+    alerts.remove(id);
+    return { ok: true };
+  },
+  "research.runAll": () => {
+    for (const tab of research.list()) if (!tab.paused) void research.run(tab.id);
+    return { started: true };
   },
   "plugins.list": () => plugins.list(),
   "plugins.setEnabled": ({ name, enabled }) => {

@@ -7,6 +7,7 @@ interface Props {
   onConnect: () => void;
   authUrl: string | null;
   pendingCount: number;
+  onOpenAlerts: () => void;
 }
 
 /** Friendly account name: the default (funded) account is the "main account". */
@@ -36,6 +37,7 @@ export function TitleBar({
   onConnect,
   authUrl,
   pendingCount,
+  onOpenAlerts,
 }: Props) {
   return (
     <div
@@ -62,6 +64,14 @@ export function TitleBar({
       )}
 
       <div className="flex-1" data-tauri-drag-region />
+
+      <button
+        onClick={onOpenAlerts}
+        title="Price alerts"
+        className="rounded-sm border border-hairline px-2 py-1 text-[12px] text-ink-dim hover:border-amber/50 hover:text-amber"
+      >
+        ⏰
+      </button>
 
       {!rhAuthed && sidecarUp && (
         <button
