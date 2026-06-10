@@ -53,6 +53,18 @@ export function ChainViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Esc closes the chain viewer (works regardless of which field has focus).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   // Group by strike for a calls | strike | puts ladder.
   const byStrike = new Map<number, { call?: OptionContract; put?: OptionContract }>();
   for (const c of contracts) {
@@ -85,7 +97,12 @@ export function ChainViewer({
     );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-md border border-hairline-2 bg-panel">
         <div className="flex items-center gap-3 border-b border-hairline px-4 py-3">
           <span className="font-wordmark text-[17px] italic text-ink">options chain</span>

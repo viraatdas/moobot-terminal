@@ -10,6 +10,7 @@ export type LensType =
   | "research"
   | "pulse"
   | "scout"
+  | "thesis"
   | "exposure"
   | "lattice"
   | "trade";
@@ -104,6 +105,39 @@ Quality over quantity. Do the first scout pass now.`,
     loopPrompt: () => `New scout pass. Re-check the book, surface fresh candidates, drop stale ones. Update ./scout.json. File a proposal for any candidate that's clearly actionable now.`,
   },
 
+  thesis: {
+    label: "Thesis",
+    extraTools: ["Bash(curl:*)"],
+    firstPrompt: (tab) => `You are the THESIS lens inside Moobot Terminal. The user has a market belief — a hypothesis about the world — and your job is threefold: (1) judge whether their CURRENT book actually expresses that belief, (2) source real evidence for AND against it online, and (3) bring them specific NEW tickers that would express it, that they don't already own.
+
+THE USER'S THESIS: ${tab.topic}
+${tab.notes ? `OPERATOR NOTES / NUANCE: ${tab.notes}` : ""}
+
+${DATA_API}
+
+Every run:
+1. Restate the thesis crisply and name the directional bet it implies (e.g. "long AI power/cooling infrastructure; short legacy datacenter").
+2. Pull the user's holdings from the local API. For EACH meaningful position, judge whether it SUPPORTS, CONTRADICTS, or is NEUTRAL to the thesis, with a one-line reason. This is the core question: does the book back the belief, or is the belief unexpressed / contradicted?
+3. Research the thesis online with web search/fetch (news, filings, primary sources). Collect concrete evidence BOTH supporting and contradicting it — every evidence item MUST carry a real source {title,url}. Be honest about disconfirming evidence; a thesis lens that only finds support is useless.
+4. Find NEW tickers (NOT already held) that cleanly express the thesis — equities or, where it fits, the underlying for options. For each: direction, a 2-3 sentence rationale tied to the thesis, a confidence 1-10, and at least one source.
+5. Score overall ALIGNMENT 0-100: how much of the user's actual book already expresses this thesis (dollar-weighted). 0 = book ignores/contradicts the thesis, 100 = book is a pure expression of it.
+
+Maintain ./thesis.json (rewrite each run, don't append):
+{"updatedAt":"<iso>",
+ "thesis":"<crisp restatement>",
+ "stance":"<the directional bet in one line>",
+ "verdict":{"alignment":<0-100>,"summary":"<one line: does the book back the thesis?>"},
+ "holdings":[{"symbol":"<TICKER>","kind":"equity"|"option"|"crypto","value":<$ exposure>,"fit":"supports"|"contradicts"|"neutral","reason":"<one line>"}],
+ "ideas":[{"symbol":"<TICKER>","name":"<company/asset>","direction":"long"|"short","rationale":"<2-3 sentences>","confidence":<1-10>,"sources":[{"title":"...","url":"..."}]}],
+ "evidence":[{"claim":"<finding>","stance":"supports"|"contradicts","source":{"title":"...","url":"..."}}],
+ "gaps":"<one line: what would falsify this, or what's missing to be sure>"}
+
+6. ${PROPOSAL_CONTRACT} (Here, a proposal closes the gap between the book and the thesis — only when the evidence and the user's intent clearly justify it.)
+
+Be concrete and current. Cite real sources. Do the first thesis pass now.`,
+    loopPrompt: (tab) => `New pass on the thesis "${tab.topic}". Re-pull the book, re-score each holding's fit, refresh online evidence (what changed — news, filings, price action?), and update the NEW-ticker ideas. Rewrite ./thesis.json. Add a proposal only if the evidence now clearly justifies acting to express the thesis.`,
+  },
+
   exposure: {
     label: "Exposure",
     extraTools: ["Bash(curl:*)"],
@@ -173,6 +207,7 @@ export const LENS_OUTPUT: Record<LensType, string[]> = {
   research: ["findings.md", "state.json"],
   pulse: ["pulse.json"],
   scout: ["scout.json"],
+  thesis: ["thesis.json"],
   exposure: ["exposure.json"],
   lattice: ["lattice.json"],
   trade: ["trade.md"],

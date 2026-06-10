@@ -1,7 +1,8 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import type { LensType } from "../lib/client";
 import { fmtMoney } from "../lib/client";
-import { Cashtags, onCashtagClick } from "../lib/cashtags";
+import { Cashtags, onCashtagClick, openTicker } from "../lib/cashtags";
 
 interface Props {
   type: LensType;
@@ -14,6 +15,8 @@ export function LensSurface({ type, lens }: Props) {
       return <PulseSurface items={lens["pulse.json"] ?? []} />;
     case "scout":
       return <ScoutSurface items={lens["scout.json"] ?? []} />;
+    case "thesis":
+      return <ThesisSurface data={lens["thesis.json"]} />;
     case "exposure":
       return <ExposureSurface data={lens["exposure.json"]} />;
     case "lattice":
@@ -31,6 +34,39 @@ function Empty({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 text-[10px] tracking-[0.16em] uppercase text-ink-faint">{children}</div>
+  );
+}
+
+/** A clickable $TICKER pill that opens the options chain. */
+function Ticker({ sym }: { sym: string }) {
+  const s = cleanSymbol(sym);
+  if (!s) return <span className="text-ink-faint">—</span>;
+  return (
+    <button className="cashtag" onClick={() => openTicker(s)}>
+      ${s}
+    </button>
+  );
+}
+
+function cleanSymbol(value: unknown): string {
+  return String(value ?? "")
+    .replace(/^\$/, "")
+    .trim()
+    .toUpperCase();
+}
+
+function sourceLabel(s: any): string {
+  if (s?.title) return String(s.title).slice(0, 44);
+  try {
+    return new URL(String(s?.url)).hostname.replace(/^www\./, "");
+  } catch {
+    return "source";
+  }
 }
 
 /* ---------- Pulse: impact-ranked timeline ---------- */
@@ -116,6 +152,235 @@ function ScoutSurface({ items }: { items: any[] }) {
   );
 }
 
+/* ---------- Thesis: belief vs. book + sourced ideas ---------- */
+function fitTone(fit: string): { text: string; border: string } {
+  const f = fit.toLowerCase();
+  if (f === "supports") return { text: "text-pos", border: "var(--color-pos)" };
+  if (f === "contradicts") return { text: "text-neg", border: "var(--color-neg)" };
+  return { text: "text-ink-dim", border: "var(--color-ink-faint)" };
+}
+
+function AlignmentRing({ value }: { value: number }) {
+  const v = Math.max(0, Math.min(100, value));
+  const R = 33;
+  const C = 2 * Math.PI * R;
+  const off = C * (1 - v / 100);
+  const color =
+    v >= 66 ? "var(--color-pos)" : v >= 33 ? "var(--color-amber)" : "var(--color-neg)";
+  return (
+    <svg width="82" height="82" viewBox="0 0 82 82">
+      <circle cx="41" cy="41" r={R} fill="none" stroke="var(--color-hairline-2)" strokeWidth="6" />
+      <circle
+        cx="41"
+        cy="41"
+        r={R}
+        fill="none"
+        stroke={color}
+        strokeWidth="6"
+        strokeLinecap="round"
+        strokeDasharray={C}
+        strokeDashoffset={off}
+        transform="rotate(-90 41 41)"
+        style={{ transition: "stroke-dashoffset 0.6s cubic-bezier(0.16,1,0.3,1)" }}
+      />
+      <text
+        x="41"
+        y="39"
+        textAnchor="middle"
+        className="font-data"
+        fill="var(--color-ink)"
+        fontSize="19"
+        fontWeight="600"
+      >
+        {Math.round(v)}
+      </text>
+      <text x="41" y="54" textAnchor="middle" fill="var(--color-ink-faint)" fontSize="9">
+        / 100
+      </text>
+    </svg>
+  );
+}
+
+function ThesisSurface({ data }: { data: any }) {
+  if (!data)
+    return (
+      <Empty>
+        No thesis yet. State a belief — the agent scores your book against it, sources evidence
+        online, and finds tickers that fit.
+      </Empty>
+    );
+  const align = Math.max(0, Math.min(100, Number(data?.verdict?.alignment) || 0));
+  const holdings: any[] = (Array.isArray(data.holdings) ? [...data.holdings] : []).sort(
+    (a, b) => (Number(b.value) || 0) - (Number(a.value) || 0),
+  );
+  const ideas: any[] = Array.isArray(data.ideas) ? data.ideas : [];
+  const evidence: any[] = Array.isArray(data.evidence) ? data.evidence : [];
+
+  return (
+    <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5 select-text">
+      {/* header: thesis + alignment ring */}
+      <div className="flex items-start gap-5">
+        <div className="min-w-0 flex-1">
+          <SectionLabel>The thesis</SectionLabel>
+          <div className="text-[15px] leading-snug text-ink">
+            <Cashtags text={data.thesis} />
+          </div>
+          {data.stance && (
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-sm border border-amber/25 bg-amber-dim px-2 py-1 text-[11px] text-amber">
+              <span className="text-[9px] tracking-[0.12em] uppercase text-amber/70">The bet</span>
+              <Cashtags text={data.stance} />
+            </div>
+          )}
+          {data?.verdict?.summary && (
+            <div className="mt-3 text-[12px] leading-snug text-ink-dim">
+              <Cashtags text={data.verdict.summary} />
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-center">
+          <AlignmentRing value={align} />
+          <div className="mt-1 text-[9.5px] tracking-[0.14em] uppercase text-ink-faint">
+            book alignment
+          </div>
+        </div>
+      </div>
+
+      {/* book vs. thesis */}
+      <section>
+        <SectionLabel>Your book vs. this thesis</SectionLabel>
+        {holdings.length === 0 ? (
+          <div className="text-[11.5px] text-ink-faint">
+            No positions read — connect your full account to score the book.
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {holdings.map((h, i) => {
+              const tone = fitTone(String(h.fit));
+              const fit = String(h.fit ?? "neutral").toLowerCase();
+              return (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 rounded-sm border-l-2 bg-panel py-1.5 pr-3 pl-2.5"
+                  style={{ borderLeftColor: tone.border }}
+                >
+                  <Ticker sym={h.symbol} />
+                  <span className={`shrink-0 text-[9px] uppercase tracking-wide ${tone.text}`}>
+                    {fit}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-dim">
+                    {h.reason}
+                  </span>
+                  <span className="font-data shrink-0 text-[10px] text-ink-faint">
+                    {fmtMoney(h.value)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* new tickers that fit */}
+      <section>
+        <SectionLabel>Ideas that fit{ideas.length ? ` · ${ideas.length}` : ""}</SectionLabel>
+        {ideas.length === 0 ? (
+          <div className="text-[11.5px] text-ink-faint">No new tickers surfaced yet.</div>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {ideas.map((it, i) => (
+              <div key={i} className="rounded-sm border border-hairline bg-panel p-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <Ticker sym={it.symbol} />
+                  <span
+                    className={`text-[10px] font-semibold uppercase ${
+                      it.direction === "short" ? "text-neg" : "text-pos"
+                    }`}
+                  >
+                    {it.direction ?? "long"} · {it.confidence ?? "?"}/10
+                  </span>
+                </div>
+                {it.name && <div className="mt-0.5 text-[10px] text-ink-faint">{it.name}</div>}
+                <div className="mt-1 text-[11.5px] leading-snug text-ink-dim">
+                  <Cashtags text={it.rationale} />
+                </div>
+                {Array.isArray(it.sources) && it.sources.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                    {it.sources.slice(0, 3).map((s: any, j: number) =>
+                      s?.url ? (
+                        <a
+                          key={j}
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={s?.title}
+                          className="truncate text-[10px] text-amber hover:underline"
+                        >
+                          {sourceLabel(s)} ↗
+                        </a>
+                      ) : null,
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* sourced evidence both ways */}
+      <section>
+        <SectionLabel>Evidence</SectionLabel>
+        {evidence.length === 0 ? (
+          <div className="text-[11.5px] text-ink-faint">No sourced evidence yet.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {evidence.map((e, i) => {
+              const against = String(e.stance).toLowerCase() === "contradicts";
+              return (
+                <div
+                  key={i}
+                  className="flex gap-2.5 rounded-sm border-l-2 bg-panel py-1.5 pr-3 pl-2.5"
+                  style={{ borderLeftColor: against ? "var(--color-neg)" : "var(--color-pos)" }}
+                >
+                  <span
+                    className={`shrink-0 text-[14px] leading-tight ${against ? "text-neg" : "text-pos"}`}
+                  >
+                    {against ? "−" : "+"}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11.5px] leading-snug text-ink-dim">
+                      <Cashtags text={e.claim} />
+                    </div>
+                    {e.source?.url && (
+                      <a
+                        href={e.source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-amber hover:underline"
+                      >
+                        {sourceLabel(e.source)} ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {data.gaps && (
+        <div className="rounded-sm border border-hairline bg-panel-2 px-3 py-2 text-[11.5px] leading-snug text-ink-dim">
+          <span className="mr-1.5 text-[9px] tracking-[0.14em] uppercase text-ink-faint">
+            What would break this
+          </span>
+          <Cashtags text={data.gaps} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- Exposure: risk dashboard ---------- */
 function ExposureSurface({ data }: { data: any }) {
   if (!data) return <Empty>No exposure computed yet. The agent reads your book's risk.</Empty>;
@@ -125,7 +390,7 @@ function ExposureSurface({ data }: { data: any }) {
   const maxShare = Math.max(0.0001, ...byU.map((u) => Math.abs(Number(u.share) || 0)));
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-      <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 xl:grid-cols-2">
         <Stat label="Net delta ($)" value={fmtMoney(data.netDeltaDollars)} signed={data.netDeltaDollars} />
         <Stat label="Gross exposure" value={fmtMoney(data.grossValue)} />
       </div>
@@ -214,44 +479,352 @@ function Stat({ label, value, signed }: { label: string; value: string; signed?:
   );
 }
 
-/* ---------- Lattice: correlation heatmap ---------- */
+/* ---------- Lattice: correlation graph (force-directed) + matrix ---------- */
+interface GNode {
+  id: string;
+  kind: string;
+  value: number;
+}
+interface GEdge {
+  a: string;
+  b: string;
+  corr: number;
+}
+
+function normalizeLatticeNodes(rawNodes: any[]): GNode[] {
+  const byId = new Map<string, GNode>();
+  for (const raw of rawNodes) {
+    const id = cleanSymbol(raw?.symbol ?? raw?.id);
+    if (!id) continue;
+    const value = Number(raw?.value) || 0;
+    const existing = byId.get(id);
+    if (existing) {
+      existing.value += value;
+      if (existing.kind === "equity" && raw?.kind) existing.kind = String(raw.kind);
+    } else {
+      byId.set(id, {
+        id,
+        kind: String(raw?.kind ?? "equity").toLowerCase(),
+        value,
+      });
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.value - a.value).slice(0, 14);
+}
+
 function LatticeSurface({ data }: { data: any }) {
+  const [view, setView] = useState<"graph" | "matrix">("graph");
   if (!data || !Array.isArray(data.nodes) || data.nodes.length === 0)
     return <Empty>No correlation map yet. The agent maps how your holdings move together.</Empty>;
-  const nodes: any[] = [...data.nodes].sort((a, b) => (b.value ?? 0) - (a.value ?? 0)).slice(0, 14);
-  const syms = nodes.map((n) => n.symbol ?? n.id);
-  const edges: any[] = data.edges ?? [];
+
+  const nodes = normalizeLatticeNodes(data.nodes);
+  const edges: GEdge[] = (Array.isArray(data.edges) ? data.edges : []).map((e: any) => ({
+    a: cleanSymbol(e.a),
+    b: cleanSymbol(e.b),
+    corr: Number(e.corr) || 0,
+  }));
+
+  if (nodes.length === 0)
+    return <Empty>No correlation map yet. The agent maps how your holdings move together.</Empty>;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-3 px-5 pt-4 pb-2">
+        {data.insight ? (
+          <div className="min-w-0 flex-1 rounded-sm border border-amber/25 bg-amber-dim/40 px-3 py-2 text-[12px] leading-snug text-amber select-text">
+            <Cashtags text={data.insight} />
+          </div>
+        ) : (
+          <div className="flex-1" />
+        )}
+        <div className="flex shrink-0 overflow-hidden rounded-sm border border-hairline">
+          {(["graph", "matrix"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`px-2.5 py-1 text-[10px] font-medium tracking-wide uppercase ${
+                view === v ? "bg-amber-dim text-amber" : "text-ink-faint hover:text-ink-dim"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {view === "graph" ? (
+        <LatticeGraph nodes={nodes} edges={edges} />
+      ) : (
+        <LatticeMatrix nodes={nodes} edges={edges} />
+      )}
+
+      <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-1 px-5 py-2 text-[9.5px] text-ink-faint">
+        <span>
+          <span
+            className="mr-1 inline-block h-2 w-3 rounded-sm align-middle"
+            style={{ background: "rgba(63,220,151,0.7)" }}
+          />
+          move together
+        </span>
+        <span>
+          <span
+            className="mr-1 inline-block h-2 w-3 rounded-sm align-middle"
+            style={{ background: "rgba(255,93,93,0.7)" }}
+          />
+          move opposite
+        </span>
+        <span>node size = $ exposure · click a node for its chain · top 14 holdings</span>
+      </div>
+    </div>
+  );
+}
+
+function LatticeGraph({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 680, h: 440 });
+  const [pos, setPos] = useState<Record<string, { x: number; y: number }>>({});
+  const [hover, setHover] = useState<string | null>(null);
+
+  const nodeKey = nodes.map((n) => `${n.id}:${n.kind}:${Math.round(n.value)}`).join("|");
+  const maxVal = Math.max(1, ...nodes.map((n) => Math.abs(n.value) || 0));
+  const radiusOf = (v: number) => 9 + 24 * Math.sqrt((Math.abs(v) || 0) / maxVal);
+
+  const gEdges = useMemo<GEdge[]>(() => {
+    const set = new Set(nodes.map((n) => n.id));
+    return edges
+      .map((e) => ({ a: e.a, b: e.b, corr: Math.max(-1, Math.min(1, e.corr)) }))
+      .filter((e) => e.a !== e.b && set.has(e.a) && set.has(e.b) && Math.abs(e.corr) >= 0.15);
+  }, [nodeKey, edges]);
+
+  // The running sim reads the latest edges through a ref, so correlation
+  // updates don't force a full re-layout (which would visually reset).
+  const edgesRef = useRef(gEdges);
+  edgesRef.current = gEdges;
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 20 && r.height > 20) setSize({ w: r.width, h: r.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const { w, h } = size;
+    if (nodes.length === 0 || w < 20) return;
+    const cx = w / 2;
+    const cy = h / 2;
+    const sim = nodes.map((n, i) => {
+      const ang = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
+      const rr = Math.min(w, h) / 3;
+      return {
+        id: n.id,
+        x: cx + Math.cos(ang) * rr,
+        y: cy + Math.sin(ang) * rr,
+        vx: 0,
+        vy: 0,
+        r: radiusOf(n.value),
+      };
+    });
+    const byId = new Map(sim.map((s) => [s.id, s]));
+    const writeOut = () => {
+      const out: Record<string, { x: number; y: number }> = {};
+      for (const s of sim) out[s.id] = { x: s.x, y: s.y };
+      setPos(out);
+    };
+    writeOut();
+    let alpha = 1;
+    let raf = 0;
+    const tick = () => {
+      alpha *= 0.97;
+      // pairwise repulsion + hard separation
+      for (let i = 0; i < sim.length; i++) {
+        for (let j = i + 1; j < sim.length; j++) {
+          const a = sim[i];
+          const b = sim[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const d2 = dx * dx + dy * dy || 0.01;
+          const d = Math.sqrt(d2);
+          const ux = dx / d;
+          const uy = dy / d;
+          const rep = 11000 / d2;
+          a.vx += ux * rep;
+          a.vy += uy * rep;
+          b.vx -= ux * rep;
+          b.vy -= uy * rep;
+          const minD = a.r + b.r + 22;
+          if (d < minD) {
+            const push = (minD - d) * 0.5;
+            a.vx += ux * push;
+            a.vy += uy * push;
+            b.vx -= ux * push;
+            b.vy -= uy * push;
+          }
+        }
+      }
+      // correlation springs: short rest length for positive corr (cluster),
+      // long for negative (push apart). Strength scales with |corr|.
+      for (const e of edgesRef.current) {
+        const a = byId.get(e.a);
+        const b = byId.get(e.b);
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const rest = 80 + (1 - e.corr) * 70; // corr 1 -> 80px, corr -1 -> 220px
+        const k = 0.025 * Math.abs(e.corr);
+        const f = (d - rest) * k;
+        const ux = dx / d;
+        const uy = dy / d;
+        a.vx += ux * f;
+        a.vy += uy * f;
+        b.vx -= ux * f;
+        b.vy -= uy * f;
+      }
+      // gravity + integrate with friction, clamp to bounds
+      const step = Math.min(1, alpha + 0.12);
+      for (const s of sim) {
+        s.vx += (cx - s.x) * 0.01;
+        s.vy += (cy - s.y) * 0.01;
+        s.vx *= 0.82;
+        s.vy *= 0.82;
+        s.x += s.vx * step;
+        s.y += s.vy * step;
+        const pad = s.r + 6;
+        s.x = Math.max(pad, Math.min(w - pad, s.x));
+        s.y = Math.max(pad, Math.min(h - pad, s.y));
+      }
+      writeOut();
+      if (alpha > 0.02) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [nodeKey, size.w, size.h]);
+
+  const connected = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const e of gEdges) {
+      if (!m.has(e.a)) m.set(e.a, new Set());
+      if (!m.has(e.b)) m.set(e.b, new Set());
+      m.get(e.a)!.add(e.b);
+      m.get(e.b)!.add(e.a);
+    }
+    return m;
+  }, [gEdges]);
+
+  const kindColor = (kind: string) =>
+    kind === "option"
+      ? "var(--color-amber)"
+      : kind === "crypto"
+        ? "var(--color-pos)"
+        : "var(--color-ink-dim)";
+
+  const hoverNode = hover ? nodes.find((n) => n.id === hover) : null;
+  const hoverNeighbors = hover ? [...(connected.get(hover) ?? [])] : [];
+
+  return (
+    <div ref={wrapRef} className="relative min-h-0 flex-1 overflow-hidden">
+      <svg width={size.w} height={size.h} className="block">
+        {gEdges.map((e, i) => {
+          const a = pos[e.a];
+          const b = pos[e.b];
+          if (!a || !b) return null;
+          const active = !hover || e.a === hover || e.b === hover;
+          const col = e.corr >= 0 ? "63,220,151" : "255,93,93";
+          const op = (0.12 + 0.5 * Math.abs(e.corr)) * (active ? 1 : 0.1);
+          return (
+            <line
+              key={i}
+              x1={a.x}
+              y1={a.y}
+              x2={b.x}
+              y2={b.y}
+              stroke={`rgba(${col},${op})`}
+              strokeWidth={1 + 3 * Math.abs(e.corr)}
+            />
+          );
+        })}
+        {nodes.map((n) => {
+          const p = pos[n.id];
+          if (!p) return null;
+          const r = radiusOf(n.value);
+          const dim = !!hover && hover !== n.id && !hoverNeighbors.includes(n.id);
+          const col = kindColor(n.kind);
+          return (
+            <g
+              key={n.id}
+              transform={`translate(${p.x},${p.y})`}
+              style={{
+                cursor: "pointer",
+                opacity: dim ? 0.28 : 1,
+                transition: "opacity 0.15s ease",
+              }}
+              onMouseEnter={() => setHover(n.id)}
+              onMouseLeave={() => setHover((cur) => (cur === n.id ? null : cur))}
+              onClick={() => openTicker(n.id)}
+            >
+              <circle
+                r={r}
+                fill="var(--color-panel-2)"
+                stroke={col}
+                strokeWidth={hover === n.id ? 2.5 : 1.5}
+              />
+              <text
+                textAnchor="middle"
+                dominantBaseline="central"
+                className="font-data"
+                fill="var(--color-ink)"
+                fontSize={Math.max(8, Math.min(12, r * 0.5))}
+                style={{ pointerEvents: "none" }}
+              >
+                {n.id}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      {hoverNode && pos[hoverNode.id] && (
+        <div
+          className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-sm border border-hairline-2 bg-panel px-2.5 py-1.5 shadow-xl"
+          style={{
+            left: pos[hoverNode.id].x,
+            top: pos[hoverNode.id].y + radiusOf(hoverNode.value) + 8,
+          }}
+        >
+          <div className="font-data text-[11px] font-semibold text-ink">{hoverNode.id}</div>
+          <div className="text-[9.5px] text-ink-faint">
+            {hoverNode.kind} · {fmtMoney(hoverNode.value)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LatticeMatrix({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
+  const syms = nodes.map((n) => n.id);
   const corr = (a: string, b: string): number | null => {
     if (a === b) return 1;
-    const e = edges.find(
-      (e) => (e.a === a && e.b === b) || (e.a === b && e.b === a),
-    );
-    return e ? Number(e.corr) : null;
+    const e = edges.find((x) => (x.a === a && x.b === b) || (x.a === b && x.b === a));
+    return e ? e.corr : null;
   };
   const cellColor = (c: number | null) => {
     if (c === null) return "transparent";
     const intensity = Math.min(1, Math.abs(c));
-    return c >= 0
-      ? `rgba(63,220,151,${intensity * 0.7})`
-      : `rgba(255,93,93,${intensity * 0.7})`;
+    return c >= 0 ? `rgba(63,220,151,${intensity * 0.7})` : `rgba(255,93,93,${intensity * 0.7})`;
   };
-
   return (
     <div className="min-h-0 flex-1 overflow-auto p-5">
-      {data.insight && (
-        <div className="mb-4 rounded-sm border border-amber/25 bg-amber-dim/40 p-3 text-[12.5px] leading-snug text-amber select-text">
-          <Cashtags text={data.insight} />
-        </div>
-      )}
       <table className="border-collapse">
         <thead>
           <tr>
             <th className="sticky left-0 bg-bg" />
             {syms.map((s) => (
-              <th
-                key={s}
-                className="font-data h-16 w-7 px-0 align-bottom text-[9px] text-ink-faint"
-              >
+              <th key={s} className="font-data h-16 w-7 px-0 align-bottom text-[9px] text-ink-faint">
                 <div className="rotate-180 [writing-mode:vertical-rl]">{s}</div>
               </th>
             ))}
@@ -282,11 +855,6 @@ function LatticeSurface({ data }: { data: any }) {
           ))}
         </tbody>
       </table>
-      <div className="mt-3 flex gap-3 text-[9.5px] text-ink-faint">
-        <span><span className="inline-block h-2 w-2 align-middle" style={{ background: "rgba(63,220,151,0.7)" }} /> moves together</span>
-        <span><span className="inline-block h-2 w-2 align-middle" style={{ background: "rgba(255,93,93,0.7)" }} /> moves opposite</span>
-        <span className="text-ink-faint">node size = $ exposure · top 14 holdings</span>
-      </div>
     </div>
   );
 }

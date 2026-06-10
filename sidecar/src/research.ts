@@ -7,6 +7,7 @@ import {
   RESEARCH_DIR,
   RESEARCH_ALLOWED_TOOLS,
   RESEARCH_DISALLOWED_TOOLS,
+  LENS_MODEL,
 } from "./config.ts";
 import type { PluginManager } from "./plugins.ts";
 import { LENSES, LENS_OUTPUT, type LensTab, type LensType } from "./lenses.ts";
@@ -236,7 +237,7 @@ export class ResearchManager {
       : def.loopPrompt(tab, refContext);
     // Plugins (sources) only apply to research-style lenses that browse.
     const prompt =
-      tab.type === "research" || tab.type === "trade"
+      tab.type === "research" || tab.type === "trade" || tab.type === "thesis"
         ? base + this.plugins.promptFragment()
         : base;
     const allowedTools = [
@@ -249,6 +250,8 @@ export class ResearchManager {
     const args = [
       "-p",
       prompt,
+      "--model",
+      LENS_MODEL,
       "--output-format",
       "stream-json",
       "--verbose",

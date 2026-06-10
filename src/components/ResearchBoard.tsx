@@ -95,7 +95,9 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
     };
   }, [active?.id]);
 
-  const tabFeed = feed.filter((f) => f.tabId === active?.id).slice(0, 30);
+  // Most recent agent action for the active tab (feed is newest-first) — shown
+  // as a slim live line in the header while a run is in progress.
+  const latestActivity = active ? (feed.find((f) => f.tabId === active.id)?.text ?? null) : null;
 
   return (
     <div className="flex min-h-0 flex-col bg-bg">
@@ -170,7 +172,8 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
             <span className="text-ink-dim">Pulse</span> what's moving,{" "}
             <span className="text-ink-dim">Exposure</span> &{" "}
             <span className="text-ink-dim">Lattice</span> for risk and correlation,{" "}
-            <span className="text-ink-dim">Scout</span> for new ideas, and{" "}
+            <span className="text-ink-dim">Scout</span> for new ideas,{" "}
+            <span className="text-ink-dim">Thesis</span> to test a belief, and{" "}
             <span className="text-ink-dim">Trade</span> to turn it all into proposals.
           </p>
           <div className="mt-2 flex gap-2">
@@ -209,13 +212,16 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
                 <div className="mt-0.5 truncate text-[12px] text-neg" title={active.lastError}>
                   ⚠ {active.lastError}
                 </div>
-              ) : (
-                findings.state?.headline && (
-                  <div className="mt-0.5 truncate text-[12px] text-ink-dim">
-                    {findings.state.headline}
-                  </div>
-                )
-              )}
+              ) : active.lastRunStatus === "running" && latestActivity ? (
+                <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint">
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-amber pulse-dot" />
+                  <span className="truncate">{latestActivity}</span>
+                </div>
+              ) : findings.state?.headline ? (
+                <div className="mt-0.5 truncate text-[12px] text-ink-dim">
+                  {findings.state.headline}
+                </div>
+              ) : null}
             </div>
             {active.type === "research" && findings.state?.sentiment && (
               <span
@@ -230,11 +236,11 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
             <RunControls tab={active} onChanged={onTabsChanged} />
           </div>
 
-          {/* body: lens surface + live feed */}
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_240px]">
+          {/* body: full-width lens surface */}
+          <div className="flex min-h-0 flex-1 flex-col">
             {active.type === "research" ? (
               <div
-                className="findings min-h-0 overflow-y-auto px-6 py-4"
+                className="findings min-h-0 flex-1 overflow-y-auto px-6 py-4"
                 onClick={onCashtagClick}
               >
                 {findings.panels.length > 0 && (
@@ -245,7 +251,7 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
                   </div>
                 )}
                 {findings.markdown ? (
-                  <div dangerouslySetInnerHTML={{ __html: marked.parse(findings.markdown) }} />
+                  <div dangerouslySetInnerHTML={{ __html: marked.parse(findings.markdown) as string }} />
                 ) : (
                   <div className="py-10 text-center text-[12px] text-ink-faint">
                     {active.lastRunStatus === "running"
@@ -255,33 +261,8 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
                 )}
               </div>
             ) : (
-              <div className="flex min-h-0 flex-col">
-                <LensSurface type={active.type} lens={findings.lens} />
-              </div>
+              <LensSurface type={active.type} lens={findings.lens} />
             )}
-            <div className="flex min-h-0 flex-col border-l border-hairline bg-panel">
-              <div className="flex items-center gap-2 px-3 pt-3 pb-1.5">
-                <span className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">
-                  Agent activity
-                </span>
-                {active.lastRunStatus === "running" && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber pulse-dot" />
-                )}
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-                {tabFeed.length === 0 && (
-                  <div className="py-4 text-[11px] text-ink-faint">idle</div>
-                )}
-                {tabFeed.map((line) => (
-                  <div
-                    key={line.id}
-                    className="feed-in border-l border-hairline-2 py-1.5 pl-2.5 text-[10.5px] leading-snug break-words text-ink-dim"
-                  >
-                    {line.text}
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -417,7 +398,7 @@ function RunControls({ tab, onChanged }: { tab: ResearchTab; onChanged: () => vo
   );
 }
 
-const LENS_ORDER: LensType[] = ["research", "pulse", "scout", "exposure", "lattice", "trade"];
+const LENS_ORDER: LensType[] = ["research", "pulse", "scout", "thesis", "exposure", "lattice", "trade"];
 
 function NewTabForm({
   tabs,
@@ -446,7 +427,9 @@ function NewTabForm({
         ? "Focus (optional) — blank = your whole book + market"
         : type === "scout"
           ? "Mandate (optional) — e.g. high-IV options setups, small-cap momentum"
-          : "Topic — e.g. NVDA earnings setup, uranium miners, AI capex cycle";
+          : type === "thesis"
+            ? "Your belief — e.g. AI power demand outruns the grid; rate cuts come slower than priced"
+            : "Topic — e.g. NVDA earnings setup, uranium miners, AI capex cycle";
 
   async function create() {
     if (meta.hasTopic && type !== "pulse" && type !== "scout" && !topic.trim()) return;
@@ -470,7 +453,7 @@ function NewTabForm({
   return (
     <div className="border-b border-hairline bg-panel px-5 py-4">
       {/* lens type picker */}
-      <div className="mb-3 grid grid-cols-6 gap-1.5">
+      <div className="mb-3 grid grid-cols-[repeat(auto-fit,minmax(78px,1fr))] gap-1.5">
         {LENS_ORDER.map((t) => {
           const m = LENS_META[t];
           return (

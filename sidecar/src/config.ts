@@ -21,6 +21,11 @@ export const BIND_HOST = SERVER_TOKEN ? "0.0.0.0" : "127.0.0.1";
 
 export const RH_MCP_URL = "https://agent.robinhood.com/mcp/trading";
 
+// Model the lens agents run on. Pinned so it can't silently drift to the
+// Claude Code default (or a fallback like Sonnet under load). Override per
+// deployment with MOOBOT_LENS_MODEL.
+export const LENS_MODEL = process.env.MOOBOT_LENS_MODEL || "claude-opus-4-8";
+
 /** Robinhood tools research agents may call. Order placement is deliberately absent. */
 export const RESEARCH_ALLOWED_TOOLS = [
   "WebSearch",
