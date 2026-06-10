@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import { ensureDirs, WS_PORT } from "./config.ts";
+import { ensureDirs, WS_PORT, BIND_HOST, SERVER_TOKEN } from "./config.ts";
 import { RobinhoodGateway } from "./robinhood.ts";
 import { ResearchManager } from "./research.ts";
 import { ProposalQueue } from "./proposals.ts";
@@ -25,6 +25,19 @@ let wss: WebSocketServer | null = null;
  * the UI WebSocket). Read-only market data backed by the REST token. Loopback
  * only. Lets the options-research plugin curl live chains/positions.
  */
+function isLoopback(req: http.IncomingMessage): boolean {
+  const a = req.socket.remoteAddress ?? "";
+  return a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1";
+}
+
+/** In server mode, non-loopback callers must present the shared secret. */
+function httpAuthorized(req: http.IncomingMessage, url: URL): boolean {
+  if (!SERVER_TOKEN) return true; // local mode, no auth
+  if (isLoopback(req)) return true; // in-container agents curl loopback
+  const bearer = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+  return bearer === SERVER_TOKEN || url.searchParams.get("token") === SERVER_TOKEN;
+}
+
 async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${WS_PORT}`);
   const send = (code: number, body: unknown) => {
@@ -33,6 +46,7 @@ async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse) {
   };
   try {
     if (url.pathname === "/health") return send(200, { ok: true });
+    if (!httpAuthorized(req, url)) return send(401, { error: "unauthorized" });
     if (url.pathname === "/chain") {
       const symbol = url.searchParams.get("symbol");
       const exp = url.searchParams.get("expiration");
@@ -61,7 +75,16 @@ async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse) {
 
 function listen(attempt = 0) {
   const httpServer = http.createServer((req, res) => void handleHttp(req, res));
-  const server = new WebSocketServer({ server: httpServer });
+  const server = new WebSocketServer({
+    server: httpServer,
+    // In server mode, the WS handshake must carry the shared secret.
+    verifyClient: (info) => {
+      if (!SERVER_TOKEN) return true;
+      const url = new URL(info.req.url ?? "/", `http://x:${WS_PORT}`);
+      const proto = info.req.headers["sec-websocket-protocol"];
+      return url.searchParams.get("token") === SERVER_TOKEN || proto === SERVER_TOKEN;
+    },
+  });
   httpServer.on("error", (err: NodeJS.ErrnoException) => {
     // A previous sidecar may still hold the port for a moment (app relaunch,
     // dev instance shutting down) — retry before giving up.
@@ -76,10 +99,13 @@ function listen(attempt = 0) {
   });
   httpServer.on("listening", () => {
     wss = server;
-    console.log(`[moobot-sidecar] listening on ws+http://127.0.0.1:${WS_PORT}`);
+    console.log(
+      `[moobot-sidecar] listening on ws+http://${BIND_HOST}:${WS_PORT}` +
+        (SERVER_TOKEN ? " (token-protected)" : ""),
+    );
   });
   server.on("connection", onConnection);
-  httpServer.listen(WS_PORT, "127.0.0.1");
+  httpServer.listen(WS_PORT, BIND_HOST);
 }
 
 function broadcast(event: string, payload: unknown) {
@@ -226,7 +252,7 @@ listen();
 
 // Connect eagerly if we have tokens (or can import Claude Code's), so the UI
 // loads data instantly without a browser round-trip.
-if (rh.hasStoredTokens() || rh.importFromClaudeCode()) {
+if (rh.hasStoredTokens() || rh.importFromEnv() || rh.importFromClaudeCode()) {
   rh.connect().catch((err) => console.error(`[moobot-sidecar] rh connect: ${err}`));
 }
 

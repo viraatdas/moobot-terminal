@@ -56,6 +56,18 @@ function parsePaste(raw: string): StoredToken | null {
   }
 }
 
+/** Server-mode seed: token provided via env (Fly secret). */
+function seedFromEnv(): StoredToken | null {
+  const authState = process.env.RH_REST_AUTH_STATE; // full web:auth_state JSON (has refresh_token)
+  if (authState) {
+    const parsed = parsePaste(authState);
+    if (parsed) return parsed;
+  }
+  const bare = process.env.RH_REST_TOKEN;
+  if (bare) return { accessToken: bare.trim(), savedAt: Date.now() };
+  return null;
+}
+
 /** One-time convenience seed from the sibling moobot project's env file. */
 function seedFromMoobot(): StoredToken | null {
   const envPath = path.join(os.homedir(), "Documents", "moobot", ".env.local");
@@ -77,7 +89,7 @@ export class RobinhoodRestAuth {
   readonly rest: RobinhoodRest;
 
   constructor() {
-    this.token = load() ?? seedFromMoobot();
+    this.token = load() ?? seedFromEnv() ?? seedFromMoobot();
     if (this.token && !load()) save(this.token); // persist the seed
     this.rest = new RobinhoodRest(() => {
       if (!this.token) throw new RobinhoodAuthError("No Robinhood REST token set");

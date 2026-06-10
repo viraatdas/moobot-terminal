@@ -100,6 +100,37 @@ export class RobinhoodGateway {
    * credentials Claude Code already holds for this same MCP server from the
    * macOS keychain. Refresh then proceeds normally via the SDK.
    */
+  /**
+   * Server-mode: load Robinhood MCP tokens from an env secret (no macOS
+   * keychain on Linux). RH_MCP_OAUTH is a JSON blob
+   * {accessToken, refreshToken, clientId, expiresAt, scope}.
+   */
+  importFromEnv(): boolean {
+    const blob = process.env.RH_MCP_OAUTH;
+    if (!blob) return false;
+    try {
+      const rh = JSON.parse(blob);
+      if (!rh.accessToken) return false;
+      saveAuth({
+        clientInformation: { client_id: rh.clientId },
+        tokens: {
+          access_token: rh.accessToken,
+          refresh_token: rh.refreshToken,
+          token_type: "bearer",
+          scope: rh.scope ?? "internal",
+          expires_in: Math.max(
+            60,
+            Math.floor((Number(rh.expiresAt ?? Date.now() + 3600_000) - Date.now()) / 1000),
+          ),
+        },
+      });
+      console.log("[robinhood] imported credentials from RH_MCP_OAUTH env");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   importFromClaudeCode(): boolean {
     try {
       const raw = execFileSync(
@@ -146,7 +177,7 @@ export class RobinhoodGateway {
 
   private async doConnect(): Promise<void> {
     this.provider.onAuthUrl = (url) => this.onAuthUrl?.(url);
-    if (!this.hasStoredTokens()) this.importFromClaudeCode();
+    if (!this.hasStoredTokens()) this.importFromEnv() || this.importFromClaudeCode();
     try {
       await this.tryConnect();
     } catch (err) {

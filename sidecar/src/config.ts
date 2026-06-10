@@ -12,8 +12,13 @@ export const RESEARCH_DIR = path.join(DATA_DIR, "research");
 export const PROPOSALS_FILE = path.join(DATA_DIR, "proposals.json");
 export const RH_AUTH_FILE = path.join(DATA_DIR, "rh-oauth.json");
 
-export const WS_PORT = 4517;
+export const WS_PORT = Number(process.env.MOOBOT_PORT) || 4517;
 export const OAUTH_CALLBACK_PORT = 45171;
+
+// Server mode: bind a public interface and require a shared-secret token on
+// every WS/HTTP connection. Set automatically when MOOBOT_TOKEN is present.
+export const SERVER_TOKEN = process.env.MOOBOT_TOKEN || null;
+export const BIND_HOST = SERVER_TOKEN ? "0.0.0.0" : "127.0.0.1";
 
 export const RH_MCP_URL = "https://agent.robinhood.com/mcp/trading";
 
