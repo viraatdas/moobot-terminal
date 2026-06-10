@@ -1,6 +1,7 @@
 import { marked } from "marked";
 import type { LensType } from "../lib/client";
 import { fmtMoney } from "../lib/client";
+import { Cashtags, onCashtagClick } from "../lib/cashtags";
 
 interface Props {
   type: LensType;
@@ -63,13 +64,15 @@ function PulseSurface({ items }: { items: any[] }) {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className={`text-[13px] font-semibold ${dirColor}`}>{it.headline}</span>
+                  <span className={`text-[13px] font-semibold ${dirColor}`}>
+                    <Cashtags text={it.headline} />
+                  </span>
                   <span className="font-data shrink-0 text-[9.5px] text-ink-faint">
                     {(it.symbols ?? []).slice(0, 4).join(" ")}
                   </span>
                 </div>
                 <div className="mt-0.5 text-[12px] leading-snug text-ink-dim select-text">
-                  {it.detail}
+                  <Cashtags text={it.detail} />
                 </div>
               </div>
             </div>
@@ -101,7 +104,7 @@ function ScoutSurface({ items }: { items: any[] }) {
             </div>
             <div className="mt-1 text-[11px] font-medium text-amber">{it.setup}</div>
             <div className="mt-1 text-[11.5px] leading-snug text-ink-dim select-text">
-              {it.thesis}
+              <Cashtags text={it.thesis} />
             </div>
             {it.timeHorizon && (
               <div className="font-data mt-1.5 text-[9.5px] text-ink-faint">{it.timeHorizon}</div>
@@ -188,11 +191,13 @@ function ExposureSurface({ data }: { data: any }) {
 
       {data.concentration && (
         <div className="mt-5 rounded-sm border border-amber/25 bg-amber-dim/40 p-3 text-[12px] leading-snug text-amber select-text">
-          {data.concentration}
+          <Cashtags text={data.concentration} />
         </div>
       )}
       {data.notes && (
-        <div className="mt-2 text-[11px] text-ink-faint select-text">{data.notes}</div>
+        <div className="mt-2 text-[11px] text-ink-faint select-text">
+          <Cashtags text={data.notes} />
+        </div>
       )}
     </div>
   );
@@ -235,7 +240,7 @@ function LatticeSurface({ data }: { data: any }) {
     <div className="min-h-0 flex-1 overflow-auto p-5">
       {data.insight && (
         <div className="mb-4 rounded-sm border border-amber/25 bg-amber-dim/40 p-3 text-[12.5px] leading-snug text-amber select-text">
-          {data.insight}
+          <Cashtags text={data.insight} />
         </div>
       )}
       <table className="border-collapse">
@@ -296,7 +301,7 @@ function TradeSurface({ markdown }: { markdown: string }) {
       </Empty>
     );
   return (
-    <div className="findings min-h-0 flex-1 overflow-y-auto px-6 py-4">
+    <div className="findings min-h-0 flex-1 overflow-y-auto px-6 py-4" onClick={onCashtagClick}>
       <div dangerouslySetInnerHTML={{ __html: marked.parse(markdown) as string }} />
     </div>
   );

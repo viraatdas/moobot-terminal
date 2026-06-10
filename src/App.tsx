@@ -13,6 +13,8 @@ import { ResearchBoard } from "./components/ResearchBoard";
 import { ProposalsRail } from "./components/ProposalsRail";
 import { AlertsModal } from "./components/AlertsModal";
 import { ConnectionModal } from "./components/ConnectionModal";
+import { Toaster } from "./components/Toaster";
+import { ChainViewer } from "./components/ChainViewer";
 
 export interface FeedLine {
   id: number;
@@ -44,6 +46,14 @@ export default function App() {
   const [showAlerts, setShowAlerts] = useState(false);
   const [showConnection, setShowConnection] = useState(false);
   const [cloud, setCloud] = useState(false);
+  const [chainSymbol, setChainSymbol] = useState<string | null>(null);
+
+  // Global cashtag clicks ($SPY anywhere) open the options chain.
+  useEffect(() => {
+    const onTicker = (e: Event) => setChainSymbol((e as CustomEvent).detail as string);
+    window.addEventListener("moobot:ticker", onTicker);
+    return () => window.removeEventListener("moobot:ticker", onTicker);
+  }, []);
 
   const refreshResearch = useCallback(async () => {
     try {
@@ -223,22 +233,32 @@ export default function App() {
         cloud={cloud}
       />
       <div className="grid min-h-0 flex-1 grid-cols-[300px_1fr_340px] gap-px bg-hairline">
-        <PortfolioRail
-          snapshot={snapshot}
-          restStatus={restStatus}
-          agenticBuyingPower={agenticBuyingPower}
-          onConnected={refreshSnapshot}
-        />
-        <ResearchBoard tabs={tabs} feed={feed} onTabsChanged={refreshResearch} />
-        <ProposalsRail
-          proposals={proposals}
-          accountNumber={tradeAccount}
-          tradeAccountAgentic={accounts.some((a: any) => a?.agentic_allowed)}
-          onChanged={refreshProposals}
-        />
+        <div className="col-in col-in-1 flex min-h-0 flex-col">
+          <PortfolioRail
+            snapshot={snapshot}
+            restStatus={restStatus}
+            agenticBuyingPower={agenticBuyingPower}
+            onConnected={refreshSnapshot}
+          />
+        </div>
+        <div className="col-in col-in-2 flex min-h-0 flex-col">
+          <ResearchBoard tabs={tabs} feed={feed} onTabsChanged={refreshResearch} />
+        </div>
+        <div className="col-in col-in-3 flex min-h-0 flex-col">
+          <ProposalsRail
+            proposals={proposals}
+            accountNumber={tradeAccount}
+            tradeAccountAgentic={accounts.some((a: any) => a?.agentic_allowed)}
+            onChanged={refreshProposals}
+          />
+        </div>
       </div>
       {showAlerts && <AlertsModal onClose={() => setShowAlerts(false)} />}
       {showConnection && <ConnectionModal onClose={() => setShowConnection(false)} />}
+      {chainSymbol !== null && (
+        <ChainViewer initialSymbol={chainSymbol || undefined} onClose={() => setChainSymbol(null)} />
+      )}
+      <Toaster />
     </div>
   );
 }

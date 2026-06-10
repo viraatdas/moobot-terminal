@@ -12,6 +12,8 @@ interface Props {
   cloud: boolean;
 }
 
+import { MarketClock } from "./MarketClock";
+
 /** Friendly account name: the default (funded) account is the "main account". */
 function accountLabel(a: any, num: string): string {
   if (a?.is_default) return `Main account · ${num}`;
@@ -77,6 +79,8 @@ export function TitleBar({
       )}
 
       <div className="flex-1" data-tauri-drag-region />
+
+      <MarketClock />
 
       <button
         onClick={onOpenAlerts}

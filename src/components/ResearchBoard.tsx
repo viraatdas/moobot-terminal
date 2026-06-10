@@ -9,6 +9,7 @@ import {
 } from "../lib/client";
 import type { FeedLine } from "../App";
 import { LensSurface } from "./LensSurface";
+import { onCashtagClick } from "../lib/cashtags";
 
 interface PanelItem {
   label?: string;
@@ -46,7 +47,29 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
   }>({ markdown: "", state: null, panels: [], lens: {} });
   const [creating, setCreating] = useState(false);
 
+  const [autoBusy, setAutoBusy] = useState(false);
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null;
+
+  // "Auto" — spin up a curated starter cockpit of three book-wide lenses.
+  async function autoSetup() {
+    if (autoBusy) return;
+    setAutoBusy(true);
+    const curated: Array<{ type: LensType; topic: string; intervalMinutes: number }> = [
+      { type: "pulse", topic: "Market + my book", intervalMinutes: 30 },
+      { type: "exposure", topic: "My risk", intervalMinutes: 60 },
+      { type: "lattice", topic: "Correlation", intervalMinutes: 60 },
+    ];
+    let firstId: string | null = null;
+    for (const c of curated) {
+      try {
+        const tab = await client.request("research.create", c);
+        firstId = firstId ?? tab.id;
+      } catch {}
+    }
+    setAutoBusy(false);
+    onTabsChanged();
+    if (firstId) setActiveId(firstId);
+  }
 
   useEffect(() => {
     if (!activeId && tabs.length > 0) setActiveId(tabs[0].id);
@@ -105,6 +128,14 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
         >
           +
         </button>
+        <button
+          onClick={() => void autoSetup()}
+          disabled={autoBusy}
+          className="shrink-0 px-3 text-[11px] font-medium text-ink-faint hover:text-amber disabled:opacity-50"
+          title="Auto-create a starter cockpit: Pulse + Exposure + Lattice"
+        >
+          {autoBusy ? "…" : "✦ Auto"}
+        </button>
         <div className="flex-1" />
         {tabs.length > 0 && (
           <button
@@ -142,12 +173,24 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
             <span className="text-ink-dim">Scout</span> for new ideas, and{" "}
             <span className="text-ink-dim">Trade</span> to turn it all into proposals.
           </p>
-          <button
-            onClick={() => setCreating(true)}
-            className="mt-2 rounded-sm border border-amber/40 bg-amber-dim px-4 py-1.5 text-[12px] font-semibold text-amber hover:bg-amber/25"
-          >
-            New lens
-          </button>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={() => void autoSetup()}
+              disabled={autoBusy}
+              className="rounded-sm border border-amber/40 bg-amber-dim px-4 py-1.5 text-[12px] font-semibold text-amber hover:bg-amber/25 disabled:opacity-50"
+            >
+              {autoBusy ? "Setting up…" : "✦ Auto-setup my cockpit"}
+            </button>
+            <button
+              onClick={() => setCreating(true)}
+              className="rounded-sm border border-hairline px-4 py-1.5 text-[12px] font-medium text-ink-dim hover:border-hairline-2 hover:text-ink"
+            >
+              New lens
+            </button>
+          </div>
+          <p className="text-[10.5px] text-ink-faint">
+            Auto spins up Pulse · Exposure · Lattice on your book.
+          </p>
         </div>
       )}
 
@@ -190,7 +233,10 @@ export function ResearchBoard({ tabs, feed, onTabsChanged }: Props) {
           {/* body: lens surface + live feed */}
           <div className="grid min-h-0 flex-1 grid-cols-[1fr_240px]">
             {active.type === "research" ? (
-              <div className="findings min-h-0 overflow-y-auto px-6 py-4">
+              <div
+                className="findings min-h-0 overflow-y-auto px-6 py-4"
+                onClick={onCashtagClick}
+              >
                 {findings.panels.length > 0 && (
                   <div className="mb-4 grid grid-cols-2 gap-2.5">
                     {findings.panels.map((panel) => (
