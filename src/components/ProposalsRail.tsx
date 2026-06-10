@@ -4,10 +4,16 @@ import { client, fmtMoney, type TradeProposal } from "../lib/client";
 interface Props {
   proposals: TradeProposal[];
   accountNumber: string | null;
+  tradeAccountAgentic: boolean;
   onChanged: () => void;
 }
 
-export function ProposalsRail({ proposals, accountNumber, onChanged }: Props) {
+export function ProposalsRail({
+  proposals,
+  accountNumber,
+  tradeAccountAgentic,
+  onChanged,
+}: Props) {
   const pending = proposals.filter((p) => p.status === "pending");
   const settled = proposals.filter((p) => p.status !== "pending").slice(0, 20);
 
@@ -75,7 +81,7 @@ export function ProposalsRail({ proposals, accountNumber, onChanged }: Props) {
         )}
       </div>
 
-      <OrderTicket accountNumber={accountNumber} />
+      <OrderTicket accountNumber={accountNumber} agentic={tradeAccountAgentic} />
     </div>
   );
 }
@@ -161,7 +167,13 @@ function ProposalCard({
   );
 }
 
-function OrderTicket({ accountNumber }: { accountNumber: string | null }) {
+function OrderTicket({
+  accountNumber,
+  agentic,
+}: {
+  accountNumber: string | null;
+  agentic: boolean;
+}) {
   const [symbol, setSymbol] = useState("");
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [qty, setQty] = useState("");
@@ -224,9 +236,23 @@ function OrderTicket({ accountNumber }: { accountNumber: string | null }) {
 
   return (
     <div className="shrink-0 border-t border-hairline bg-panel p-3">
-      <div className="mb-2 text-[10px] tracking-[0.16em] uppercase text-ink-faint">
-        Order ticket
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">
+          Order ticket
+        </span>
+        {accountNumber && (
+          <span className="font-data text-[9.5px] text-ink-faint">
+            → {accountNumber}
+            {agentic ? " · agentic" : ""}
+          </span>
+        )}
       </div>
+      {!agentic && (
+        <div className="mb-2 rounded-sm border border-amber/25 bg-amber-dim px-2 py-1.5 text-[10px] leading-snug text-amber">
+          No agentic account found. Robinhood only allows orders from an
+          agent-enabled account — enable one in the Robinhood app to trade here.
+        </div>
+      )}
       <div className="grid grid-cols-[1fr_76px] gap-2">
         <input
           value={symbol}

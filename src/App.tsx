@@ -20,7 +20,7 @@ export default function App() {
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [accountNumber, setAccountNumber] = useState<string | null>(
-    () => localStorage.getItem("moobot.account") || null,
+    () => localStorage.getItem("moobot.account.v2") || null,
   );
   const [portfolio, setPortfolio] = useState<any>(null);
   const [positions, setPositions] = useState<any[]>([]);
@@ -107,17 +107,18 @@ export default function App() {
         const list = Array.isArray(res) ? res : (res?.accounts ?? res?.results ?? []);
         setAccounts(list);
         if (!accountNumber && list.length > 0) {
-          // Prefer the agentic-enabled account (the only one agents can trade in),
-          // then Robinhood's default, then the first.
+          // Default the VIEW to Robinhood's default account (your real holdings),
+          // not the agentic trading account — that one is usually empty and would
+          // show a wall of $0. Trading is routed separately (see tradeAccount).
           const preferred =
-            list.find((a: any) => a?.agentic_allowed) ??
             list.find((a: any) => a?.is_default) ??
+            list.find((a: any) => Number(a?.total_value) > 0) ??
             list[0];
           const num =
             preferred?.account_number ?? preferred?.accountNumber ?? preferred?.number ?? null;
           if (num) {
             setAccountNumber(String(num));
-            localStorage.setItem("moobot.account", String(num));
+            localStorage.setItem("moobot.account.v2", String(num));
           }
         }
       } catch (err) {
@@ -146,13 +147,21 @@ export default function App() {
 
   const selectAccount = useCallback((num: string) => {
     setAccountNumber(num);
-    localStorage.setItem("moobot.account", num);
+    localStorage.setItem("moobot.account.v2", num);
   }, []);
 
   const pendingCount = useMemo(
     () => proposals.filter((p) => p.status === "pending").length,
     [proposals],
   );
+
+  // Robinhood only permits agent order placement on agentic_allowed accounts, so
+  // trades always route there regardless of which account is being viewed.
+  const tradeAccount = useMemo(() => {
+    const agentic = accounts.find((a: any) => a?.agentic_allowed);
+    const num = agentic?.account_number ?? agentic?.accountNumber ?? agentic?.number;
+    return num ? String(num) : accountNumber;
+  }, [accounts, accountNumber]);
 
   return (
     <div className="flex h-full flex-col">
@@ -171,7 +180,8 @@ export default function App() {
         <ResearchBoard tabs={tabs} feed={feed} onTabsChanged={refreshResearch} />
         <ProposalsRail
           proposals={proposals}
-          accountNumber={accountNumber}
+          accountNumber={tradeAccount}
+          tradeAccountAgentic={accounts.some((a: any) => a?.agentic_allowed)}
           onChanged={refreshProposals}
         />
       </div>
