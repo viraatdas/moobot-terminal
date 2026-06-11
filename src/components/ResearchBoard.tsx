@@ -47,6 +47,16 @@ interface Props {
   onTabsChanged: () => void;
 }
 
+type ShortcutCommand =
+  | "close-tab"
+  | "new-tab"
+  | "run-active"
+  | "run-all"
+  | "next-tab"
+  | "previous-tab"
+  | "tab-last"
+  | `tab-${number}`;
+
 const SENTIMENT_STYLE: Record<string, string> = {
   bullish: "bg-pos-dim text-pos",
   bearish: "bg-neg-dim text-neg",
@@ -68,6 +78,12 @@ function normalizeTopic(topic: string): string {
   return topic.trim().toLowerCase();
 }
 
+function shortcutDigit(e: KeyboardEvent): number | null {
+  if (/^Digit[1-9]$/.test(e.code)) return Number(e.code.slice("Digit".length));
+  if (/^[1-9]$/.test(e.key)) return Number(e.key);
+  return null;
+}
+
 export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [findings, setFindings] = useState<{
@@ -82,8 +98,8 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null;
 
   const closeTab = useCallback(
-    async (tab: ResearchTab) => {
-      if (!confirm(`Close and delete research tab "${tab.topic}"?`)) return;
+    async (tab: ResearchTab, confirmClose = true) => {
+      if (confirmClose && !confirm(`Close and delete research tab "${tab.topic}"?`)) return;
       const index = tabs.findIndex((t) => t.id === tab.id);
       const next = tabs[index + 1] ?? tabs[index - 1] ?? null;
       await client.request("research.remove", { id: tab.id });
@@ -107,6 +123,53 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
       setActiveId(tabs[next].id);
     },
     [active?.id, tabs],
+  );
+
+  const selectIndexedTab = useCallback(
+    (digit: number) => {
+      if (tabs.length === 0) return false;
+      const tab = digit === 9 ? tabs[tabs.length - 1] : tabs[digit - 1];
+      if (!tab) return false;
+      setActiveId(tab.id);
+      return true;
+    },
+    [tabs],
+  );
+
+  const runShortcut = useCallback(
+    (command: ShortcutCommand): boolean => {
+      if (command === "close-tab") {
+        if (!active) return false;
+        void closeTab(active, false);
+        return true;
+      }
+      if (command === "new-tab") {
+        setCreating(true);
+        return true;
+      }
+      if (command === "run-all") {
+        void client.request("research.runAll");
+        onTabsChanged();
+        return true;
+      }
+      if (command === "run-active") {
+        if (!active) return false;
+        void runActive();
+        return true;
+      }
+      if (command === "next-tab") {
+        selectAdjacent(1);
+        return tabs.length > 0;
+      }
+      if (command === "previous-tab") {
+        selectAdjacent(-1);
+        return tabs.length > 0;
+      }
+      if (command === "tab-last") return selectIndexedTab(9);
+      if (command.startsWith("tab-")) return selectIndexedTab(Number(command.slice(4)));
+      return false;
+    },
+    [active, closeTab, onTabsChanged, runActive, selectAdjacent, selectIndexedTab, tabs.length],
   );
 
   // "Auto" — create or refresh a curated starter cockpit of book-wide lenses.
@@ -146,54 +209,74 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      const target = e.target as HTMLElement | null;
-      const editing = !!target?.closest("input, textarea, [contenteditable='true']");
 
-      if (e.metaKey && key === "w" && active) {
+      if (e.metaKey && !e.ctrlKey && !e.altKey && key === "w") {
         e.preventDefault();
-        void closeTab(active);
+        runShortcut("close-tab");
         return;
       }
-      if (editing) return;
 
-      if (e.metaKey && key === "t") {
+      if (e.metaKey && !e.ctrlKey && !e.altKey && key === "t") {
         e.preventDefault();
-        setCreating(true);
+        runShortcut("new-tab");
         return;
       }
-      if (e.metaKey && key === "r" && e.shiftKey) {
+      if (e.metaKey && !e.ctrlKey && !e.altKey && key === "r" && e.shiftKey) {
         e.preventDefault();
-        void client.request("research.runAll");
-        onTabsChanged();
+        runShortcut("run-all");
         return;
       }
-      if (e.metaKey && key === "r") {
+      if (e.metaKey && !e.ctrlKey && !e.altKey && key === "r") {
         e.preventDefault();
-        void runActive();
+        runShortcut("run-active");
         return;
       }
-      if (e.metaKey && /^[1-9]$/.test(key)) {
-        const tab = tabs[Number(key) - 1];
-        if (tab) {
+
+      const digit = e.metaKey && !e.ctrlKey && !e.altKey ? shortcutDigit(e) : null;
+      if (digit !== null) {
+        if (runShortcut(digit === 9 ? "tab-last" : (`tab-${digit}` as ShortcutCommand))) {
           e.preventDefault();
-          setActiveId(tab.id);
         }
         return;
       }
+
+      const bracketRight = e.code === "BracketRight" || e.key === "]";
+      const bracketLeft = e.code === "BracketLeft" || e.key === "[";
       const forward =
         (e.ctrlKey && key === "tab" && !e.shiftKey) ||
-        (e.metaKey && (e.key === "]" || (key === "tab" && !e.shiftKey)));
+        (e.metaKey && !e.ctrlKey && !e.altKey && (bracketRight || (key === "tab" && !e.shiftKey)));
       const back =
         (e.ctrlKey && key === "tab" && e.shiftKey) ||
-        (e.metaKey && (e.key === "[" || (key === "tab" && e.shiftKey)));
+        (e.metaKey && !e.ctrlKey && !e.altKey && (bracketLeft || (key === "tab" && e.shiftKey)));
       if (forward || back) {
         e.preventDefault();
-        selectAdjacent(forward ? 1 : -1);
+        runShortcut(forward ? "next-tab" : "previous-tab");
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [active, closeTab, onTabsChanged, runActive, selectAdjacent, tabs]);
+  }, [runShortcut]);
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let dispose: (() => void) | null = null;
+    let cancelled = false;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<ShortcutCommand>("moobot://shortcut", (event) => {
+          runShortcut(event.payload);
+        }),
+      )
+      .then((unlisten) => {
+        if (cancelled) void unlisten();
+        else dispose = unlisten;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (dispose) void dispose();
+    };
+  }, [runShortcut]);
 
   useEffect(() => {
     if (!activeId && tabs.length > 0) setActiveId(tabs[0].id);
