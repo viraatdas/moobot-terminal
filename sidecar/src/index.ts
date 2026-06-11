@@ -6,13 +6,13 @@ import { RobinhoodGateway } from "./robinhood.ts";
 import { ResearchManager } from "./research.ts";
 import { ProposalQueue } from "./proposals.ts";
 import { PluginManager } from "./plugins.ts";
-import { RobinhoodRestAuth } from "./rh-rest-auth.ts";
+import { RobinhoodMcpData } from "./rh-mcp-data.ts";
 import { AlertManager, notify } from "./alerts.ts";
 
 ensureDirs();
 
 const rh = new RobinhoodGateway();
-const rhRest = new RobinhoodRestAuth();
+const rhData = new RobinhoodMcpData(rh);
 const plugins = new PluginManager();
 const research = new ResearchManager(plugins);
 const proposals = new ProposalQueue(rh, research);
@@ -22,8 +22,8 @@ let wss: WebSocketServer | null = null;
 
 /**
  * Local HTTP API for research agents (separate claude processes that can't use
- * the UI WebSocket). Read-only market data backed by the REST token. Loopback
- * only. Lets the options-research plugin curl live chains/positions.
+ * the UI WebSocket). Read-only market data backed by the Robinhood MCP.
+ * Loopback only. Lets the options-research plugin curl live chains/positions.
  */
 function isLoopback(req: http.IncomingMessage): boolean {
   const a = req.socket.remoteAddress ?? "";
@@ -52,20 +52,21 @@ async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse) {
       const exp = url.searchParams.get("expiration");
       if (!symbol) return send(400, { error: "symbol required" });
       if (!exp) {
-        const expirations = await rhRest.call((r) => r.chainExpirations(symbol));
+        const expirations = await rhData.optionExpirations(symbol);
         return send(200, { symbol, expirations });
       }
-      const contracts = await rhRest.call((r) => r.chainForExpiration(symbol, exp));
+      const contracts = await rhData.optionChain(symbol, exp);
       return send(200, { symbol, expiration: exp, contracts });
     }
     if (url.pathname === "/positions") {
-      const acct = url.searchParams.get("account") || (await rhRest.call((r) => r.accounts()))[0];
-      const [equities, options, cryptoPos] = await Promise.all([
-        rhRest.call((r) => r.equityPositions(acct)),
-        rhRest.call((r) => r.optionPositions(acct)),
-        rhRest.call((r) => r.cryptoPositions()).catch(() => []),
-      ]);
-      return send(200, { account: acct, equities, options, crypto: cryptoPos });
+      const acct = url.searchParams.get("account") || undefined;
+      const snapshot = await rhData.snapshot(acct);
+      return send(200, {
+        account: snapshot.accountNumber,
+        equities: snapshot.equities,
+        options: snapshot.options,
+        crypto: snapshot.crypto,
+      });
     }
     return send(404, { error: "not found" });
   } catch (err) {
@@ -154,31 +155,21 @@ const handlers: Record<string, Handler> = {
     return { authenticated: true };
   },
   "rh.call": async ({ tool, args }) => {
-    if (/place_equity_order|cancel_equity_order/.test(tool)) {
+    if (/^(place|cancel)_.*_order$/.test(tool)) {
       throw new Error(`${tool} is not callable via rh.call — use the approval flow`);
     }
     return rh.callTool(tool, args ?? {});
   },
-  // Full-account REST connection (read + market data).
-  "rhrest.status": () => rhRest.status(),
-  "rhrest.setToken": ({ token }) => rhRest.setToken(token),
+  // Full-account MCP read connection.
   "account.snapshot": async ({ accountNumber }) => {
-    const acct = accountNumber || (await rhRest.call((r) => r.accounts()))[0];
-    if (!acct) throw new Error("No account available");
-    const [portfolio, equities, options, cryptoPos] = await Promise.all([
-      rhRest.call((r) => r.portfolio(acct)),
-      rhRest.call((r) => r.equityPositions(acct)),
-      rhRest.call((r) => r.optionPositions(acct)),
-      rhRest.call((r) => r.cryptoPositions()).catch(() => []),
-    ]);
-    return { accountNumber: acct, portfolio, equities, options, crypto: cryptoPos };
+    return rhData.snapshot(accountNumber);
   },
   "options.chain": async ({ symbol, expiration }) => {
     if (!expiration) {
-      const exps = await rhRest.call((r) => r.chainExpirations(symbol));
+      const exps = await rhData.optionExpirations(symbol);
       return { expirations: exps, contracts: [] };
     }
-    const contracts = await rhRest.call((r) => r.chainForExpiration(symbol, expiration));
+    const contracts = await rhData.optionChain(symbol, expiration);
     return { expirations: [expiration], contracts };
   },
   "alerts.list": () => alerts.list(),

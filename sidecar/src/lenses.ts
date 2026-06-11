@@ -37,7 +37,7 @@ export interface LensTab {
 const DATA_API = `Moobot Terminal exposes a local read-only API on http://127.0.0.1:4517 (loopback, no auth):
 - Your holdings (all accounts): curl -s "http://127.0.0.1:4517/positions" → {equities[],options[],crypto[]} each with symbol, quantity, value, unrealizedPnl, and (options) strike/expiration/delta/iv.
 - Option chain: curl -s "http://127.0.0.1:4517/chain?symbol=SPY" then ...&expiration=YYYY-MM-DD.
-If the API returns {"error":...} the user hasn't connected their full account; note that and use the Robinhood MCP quote tools + web instead.`;
+This API is backed by the user's Robinhood MCP connection. If it returns {"error":...}, the user hasn't connected Robinhood yet; note that and use web research until they connect.`;
 
 const PROPOSAL_CONTRACT = `If (and only if) the evidence materially supports a trade, write ./proposals/<slug>.json: {"symbol","side":"buy"|"sell","quantity":<num>,"orderType":"market"|"limit","limitPrice":<num|null>,"thesis":"<3-5 sentences citing evidence>","confidence":1-10,"timeHorizon":"<e.g. 2 weeks>"}. You cannot place orders; a human approves every proposal. Most runs produce none.`;
 

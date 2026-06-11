@@ -187,7 +187,7 @@ export function ChainViewer({
           {!busy && !err && strikes.length === 0 && symbol && (
             <div className="p-4 text-center text-[12px] text-ink-faint">
               {expirations.length === 0
-                ? "No chain found (connect your full account first)."
+                ? "No chain found (connect Robinhood first)."
                 : "Pick an expiration."}
             </div>
           )}

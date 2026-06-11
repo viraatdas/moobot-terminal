@@ -4,7 +4,6 @@ import {
   type AccountSnapshot,
   type ResearchEvent,
   type ResearchTab,
-  type RestStatus,
   type TradeProposal,
 } from "./lib/client";
 import { TitleBar } from "./components/TitleBar";
@@ -34,11 +33,6 @@ export default function App() {
     () => localStorage.getItem("moobot.account.v2") || null,
   );
   const [agenticBuyingPower, setAgenticBuyingPower] = useState<number | null>(null);
-  const [restStatus, setRestStatus] = useState<RestStatus>({
-    connected: false,
-    hasToken: false,
-    expired: false,
-  });
   const [snapshot, setSnapshot] = useState<AccountSnapshot | null>(null);
   const [tabs, setTabs] = useState<ResearchTab[]>([]);
   const [proposals, setProposals] = useState<TradeProposal[]>([]);
@@ -67,22 +61,17 @@ export default function App() {
     } catch {}
   }, []);
 
-  // Full-account snapshot (all positions: equities/options/crypto) via the REST layer.
+  // Full-account snapshot via the Robinhood MCP read tools.
   const refreshSnapshot = useCallback(async () => {
     try {
-      const status: RestStatus = await client.request("rhrest.status");
-      setRestStatus(status);
-      if (!status.connected) return;
-      const snap: AccountSnapshot = await client.request("account.snapshot", {});
+      const snap: AccountSnapshot = await client.request("account.snapshot", {
+        accountNumber: accountNumber ?? undefined,
+      });
       setSnapshot(snap);
-      setRestStatus(await client.request("rhrest.status"));
     } catch (err) {
       console.error("snapshot refresh failed", err);
-      try {
-        setRestStatus(await client.request("rhrest.status"));
-      } catch {}
     }
-  }, []);
+  }, [accountNumber]);
 
   // Buying power on the agentic (tradeable) account, via the MCP.
   const refreshAgenticBp = useCallback(async (acct: string) => {
@@ -120,7 +109,6 @@ export default function App() {
         void bootRobinhood();
         void refreshResearch();
         void refreshProposals();
-        void refreshSnapshot();
       }
     });
     const offEvent = client.onEvent((event, payload) => {
@@ -143,14 +131,19 @@ export default function App() {
       offConn();
       offEvent();
     };
-  }, [bootRobinhood, refreshProposals, refreshResearch, refreshSnapshot]);
+  }, [bootRobinhood, refreshProposals, refreshResearch]);
 
-  // poll the full-account snapshot
+  // poll the full-account snapshot once the Robinhood MCP is connected
   useEffect(() => {
-    if (!sidecarUp) return;
+    if (!sidecarUp || !rhAuthed) return;
     const t = setInterval(() => void refreshSnapshot(), 30_000);
     return () => clearInterval(t);
-  }, [sidecarUp, refreshSnapshot]);
+  }, [sidecarUp, rhAuthed, refreshSnapshot]);
+
+  useEffect(() => {
+    if (!sidecarUp || !rhAuthed) return;
+    void refreshSnapshot();
+  }, [sidecarUp, rhAuthed, accountNumber, refreshSnapshot]);
 
   // once authed, load accounts
   useEffect(() => {
@@ -236,9 +229,9 @@ export default function App() {
         <div className="col-in col-in-1 flex min-h-0 flex-col">
           <PortfolioRail
             snapshot={snapshot}
-            restStatus={restStatus}
+            robinhoodConnected={rhAuthed}
             agenticBuyingPower={agenticBuyingPower}
-            onConnected={refreshSnapshot}
+            onConnect={connectRobinhood}
           />
         </div>
         <div className="col-in col-in-2 flex min-h-0 flex-col">

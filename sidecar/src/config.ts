@@ -41,6 +41,10 @@ export const RESEARCH_ALLOWED_TOOLS = [
   "mcp__robinhood-trading__get_equity_tradability",
   "mcp__robinhood-trading__get_portfolio",
   "mcp__robinhood-trading__get_equity_positions",
+  "mcp__robinhood-trading__get_option_chains",
+  "mcp__robinhood-trading__get_option_instruments",
+  "mcp__robinhood-trading__get_option_positions",
+  "mcp__robinhood-trading__get_option_quotes",
   "mcp__robinhood-trading__get_popular_lists",
 ];
 
@@ -48,6 +52,9 @@ export const RESEARCH_DISALLOWED_TOOLS = [
   "mcp__robinhood-trading__place_equity_order",
   "mcp__robinhood-trading__cancel_equity_order",
   "mcp__robinhood-trading__review_equity_order",
+  "mcp__robinhood-trading__place_option_order",
+  "mcp__robinhood-trading__cancel_option_order",
+  "mcp__robinhood-trading__review_option_order",
 ];
 
 export function ensureDirs() {

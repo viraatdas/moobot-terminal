@@ -1,36 +1,23 @@
 import { useState } from "react";
-import {
-  client,
-  fmtMoney,
-  fmtPct,
-  type AccountSnapshot,
-  type Position,
-  type RestStatus,
-} from "../lib/client";
+import { fmtMoney, fmtPct, type AccountSnapshot, type Position } from "../lib/client";
 import { ChainViewer } from "./ChainViewer";
 
 interface Props {
   snapshot: AccountSnapshot | null;
-  restStatus: RestStatus;
+  robinhoodConnected: boolean;
   agenticBuyingPower: number | null;
-  onConnected: () => void;
+  onConnect: () => void;
 }
-
-const CONSOLE_SNIPPET =
-  "copy(JSON.parse(localStorage.getItem('web:auth_state')||'{}').access_token)";
 
 export function PortfolioRail({
   snapshot,
-  restStatus,
+  robinhoodConnected,
   agenticBuyingPower,
-  onConnected,
+  onConnect,
 }: Props) {
-  const [showConnect, setShowConnect] = useState(false);
   const [chainSymbol, setChainSymbol] = useState<string | null>(null);
 
   const pf = snapshot?.portfolio;
-  const needsToken = !restStatus.hasToken;
-  const expired = restStatus.expired;
 
   return (
     <div className="flex min-h-0 flex-col bg-bg">
@@ -48,7 +35,8 @@ export function PortfolioRail({
               pf.pnl >= 0 ? "text-pos" : "text-neg"
             }`}
           >
-            {pf.pnl >= 0 ? "▲" : "▼"} {fmtMoney(Math.abs(pf.pnl))} ({fmtPct(pf.pnlPercent)}) today
+            {pf.pnl >= 0 ? "▲" : "▼"} {fmtMoney(Math.abs(pf.pnl))} ({fmtPct(pf.pnlPercent)}){" "}
+            {pf.pnlLabel ?? "unrealized"}
           </div>
         )}
         <div className="mt-2 flex items-center gap-4 text-[10px] text-ink-faint">
@@ -68,31 +56,19 @@ export function PortfolioRail({
         </div>
       </div>
 
-      {/* connect / reconnect states */}
-      {(needsToken || expired) && (
+      {/* connect state */}
+      {!robinhoodConnected && (
         <div className="border-b border-hairline bg-amber-dim/40 p-3">
           <div className="text-[11px] leading-snug text-amber">
-            {expired
-              ? "Robinhood session expired — reconnect to refresh positions."
-              : "Connect your full Robinhood account to see all positions, options, and crypto."}
+            Connect Robinhood MCP to view your accounts, positions, balances, and options.
           </div>
           <button
-            onClick={() => setShowConnect(true)}
+            onClick={onConnect}
             className="mt-2 rounded-sm border border-amber/40 bg-amber-dim px-3 py-1 text-[11px] font-semibold text-amber hover:bg-amber/25"
           >
-            {expired ? "Reconnect" : "Connect full account"}
+            Connect Robinhood
           </button>
         </div>
-      )}
-
-      {showConnect && (
-        <ConnectModal
-          onClose={() => setShowConnect(false)}
-          onConnected={() => {
-            setShowConnect(false);
-            onConnected();
-          }}
-        />
       )}
 
       {chainSymbol !== null && (
@@ -122,7 +98,7 @@ export function PortfolioRail({
               )}
           </>
         )}
-        {!snapshot && !needsToken && !expired && (
+        {!snapshot && robinhoodConnected && (
           <div className="px-4 py-6 text-center text-[12px] text-ink-faint">Loading positions…</div>
         )}
       </div>
@@ -166,7 +142,9 @@ function PositionRow({ p, onOpenChain }: { p: Position; onOpenChain?: (symbol: s
       ? `${p.quantity} · ${p.expirationDate ?? ""}${
           p.daysToExpiry != null ? ` · ${p.daysToExpiry}d` : ""
         }`
-      : `${p.quantity} ${p.kind === "crypto" ? "" : "sh"} @ ${fmtMoney(p.averagePrice)}`;
+      : p.kind === "crypto" && p.quantity === 0
+        ? "value from Robinhood MCP portfolio"
+        : `${p.quantity} ${p.kind === "crypto" ? "" : "sh"} @ ${fmtMoney(p.averagePrice)}`;
   return (
     <div
       onClick={() => onOpenChain?.(p.symbol)}
@@ -183,76 +161,6 @@ function PositionRow({ p, onOpenChain }: { p: Position; onOpenChain?: (symbol: s
         <div className={`font-data text-[9.5px] ${p.unrealizedPnl >= 0 ? "text-pos" : "text-neg"}`}>
           {p.unrealizedPnl >= 0 ? "+" : ""}
           {fmtMoney(p.unrealizedPnl)} ({fmtPct(p.unrealizedPnlPercent)})
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ConnectModal({
-  onClose,
-  onConnected,
-}: {
-  onClose: () => void;
-  onConnected: () => void;
-}) {
-  const [token, setToken] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function connect() {
-    if (!token.trim() || busy) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      await client.request("rhrest.setToken", { token: token.trim() });
-      onConnected();
-    } catch (e) {
-      setErr(String(e));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
-      <div className="w-full max-w-lg rounded-md border border-hairline-2 bg-panel p-5">
-        <div className="font-wordmark text-[18px] italic text-ink">Connect full account</div>
-        <p className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">
-          The official agent connection can't list options or crypto holdings. To see
-          everything, paste a token from your logged-in Robinhood web session.
-        </p>
-        <ol className="mt-3 space-y-1.5 text-[12px] text-ink-dim">
-          <li>
-            1. Open <span className="text-ink">robinhood.com</span> (logged in) and open the
-            browser console (⌥⌘I).
-          </li>
-          <li>2. Paste and run this — it copies your token to the clipboard:</li>
-        </ol>
-        <code className="mt-2 block rounded-sm bg-bg px-3 py-2 font-data text-[10.5px] break-all text-amber select-all">
-          {CONSOLE_SNIPPET}
-        </code>
-        <textarea
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          placeholder="Paste the token (or the full web:auth_state JSON for auto-refresh)"
-          rows={3}
-          className="mt-3 w-full resize-none rounded-sm border border-hairline bg-bg px-3 py-2 font-data text-[11px] text-ink placeholder:text-ink-faint focus:border-amber/50 focus:outline-none"
-        />
-        {err && <div className="mt-2 text-[11px] text-neg break-words">{err}</div>}
-        <div className="mt-3 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-sm px-3 py-1.5 text-[12px] text-ink-faint hover:text-ink"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => void connect()}
-            disabled={!token.trim() || busy}
-            className="rounded-sm border border-amber/40 bg-amber-dim px-4 py-1.5 text-[12px] font-semibold text-amber hover:bg-amber/25 disabled:opacity-40"
-          >
-            {busy ? "Connecting…" : "Connect"}
-          </button>
         </div>
       </div>
     </div>

@@ -99,7 +99,7 @@ export default function App() {
             <span className="text-moo">.</span>
           </>
         }
-        body="Moobot speaks directly to Robinhood's trading MCP with its own OAuth — your tokens never leave your Mac. Portfolio, positions, quotes, and a manual order ticket, live in the terminal."
+        body="Moobot speaks directly to Robinhood's trading MCP with its own OAuth, so your tokens never leave your Mac. One connection can view your Robinhood accounts and route approved trades, with execution limited to the agentic account."
         visual={<RobinhoodVisual />}
       />
 

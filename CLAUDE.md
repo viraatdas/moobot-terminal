@@ -38,8 +38,8 @@ Three processes:
 
 - Research agents get an explicit `--allowedTools` whitelist (web, files, read-only
   Robinhood data) and `--disallowedTools` on order placement/cancel/review.
-- `rh.call` over WS rejects `place_equity_order`/`cancel_equity_order`; orders go
-  only through `proposals.approve` or the manual ticket's `trade.place` with
+- `rh.call` over WS rejects all MCP `place_*_order`/`cancel_*_order` tools; orders
+  go only through `proposals.approve` or the manual ticket's `trade.place` with
   `confirmed: true`.
 - Robinhood order args: `type` (not `order_type`), string `quantity`/`limit_price`,
   `ref_id` UUID for idempotency, `account_number` required.

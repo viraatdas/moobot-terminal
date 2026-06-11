@@ -88,6 +88,7 @@ export interface PortfolioSnapshot {
   invested: number;
   pnl: number;
   pnlPercent: number;
+  pnlLabel?: string;
   previousClose: number;
   asOf: number;
 }
@@ -98,12 +99,6 @@ export interface AccountSnapshot {
   equities: Position[];
   options: Position[];
   crypto: Position[];
-}
-
-export interface RestStatus {
-  connected: boolean;
-  hasToken: boolean;
-  expired: boolean;
 }
 
 export interface OptionContract {
