@@ -140,7 +140,7 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
     (command: ShortcutCommand): boolean => {
       if (command === "close-tab") {
         if (!active) return false;
-        void closeTab(active, false);
+        void closeTab(active);
         return true;
       }
       if (command === "new-tab") {
