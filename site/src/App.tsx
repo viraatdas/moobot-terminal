@@ -70,7 +70,7 @@ export default function App() {
         </div>
       </div>
 
-      <Statement words="Open a tab. Name a thesis. An agent starts working it — and never stops." />
+      <Statement words="Open a tab. Name a thesis. An agent starts working it and never stops." />
 
       <Feature
         n="01"
@@ -81,7 +81,7 @@ export default function App() {
             <span className="text-moo">.</span>
           </>
         }
-        body="Each tab is a standing assignment — “NVDA earnings setup”, “uranium miners”. An agent works it continuously: news, filings, price action, sentiment — distilled into a living thesis with a sentiment and a conviction score, not a chat log you have to scroll."
+        body="Each tab is a standing assignment: “NVDA earnings setup”, “uranium miners”. An agent works it continuously, distilling news, filings, price action, and sentiment into a living thesis with a conviction score, not a chat log you have to scroll."
         visual={<ResearchVisual />}
       />
 
@@ -112,7 +112,7 @@ export default function App() {
             <span className="text-moo">.</span>
           </>
         }
-        body="Agents can read the market, but they cannot touch it. When the evidence supports a trade they file a proposal — thesis, risk, conviction. Every order requires your explicit click, then a confirm. By design, with the guardrails enforced in code."
+        body="Agents can read the market, but they cannot touch it. When the evidence supports a trade they file a proposal: thesis, risk, conviction. Every order requires your explicit click, then a confirm. By design, with the guardrails enforced in code."
         visual={<ApprovalVisual />}
       />
 

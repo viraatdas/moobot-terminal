@@ -21,10 +21,19 @@ export const BIND_HOST = SERVER_TOKEN ? "0.0.0.0" : "127.0.0.1";
 
 export const RH_MCP_URL = "https://agent.robinhood.com/mcp/trading";
 
+// Optional email notifications. Never hardcode secrets; set these in the app
+// launch environment or cloud sidecar env.
+export const RESEND_API_KEY = process.env.RESEND_API_KEY || null;
+export const NOTIFY_EMAIL_TO =
+  process.env.MOOBOT_NOTIFY_EMAIL || process.env.MOOBOT_ALERT_EMAIL || null;
+export const NOTIFY_EMAIL_FROM =
+  process.env.MOOBOT_NOTIFY_FROM || "Moobot Terminal <onboarding@resend.dev>";
+
 // Model the lens agents run on. Pinned so it can't silently drift to the
 // Claude Code default (or a fallback like Sonnet under load). Override per
 // deployment with MOOBOT_LENS_MODEL.
 export const LENS_MODEL = process.env.MOOBOT_LENS_MODEL || "claude-opus-4-8";
+export const CODEX_MODEL = process.env.MOOBOT_CODEX_MODEL || null;
 
 /** Robinhood tools research agents may call. Order placement is deliberately absent. */
 export const RESEARCH_ALLOWED_TOOLS = [

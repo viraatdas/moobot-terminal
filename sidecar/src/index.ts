@@ -7,14 +7,19 @@ import { ResearchManager } from "./research.ts";
 import { ProposalQueue } from "./proposals.ts";
 import { PluginManager } from "./plugins.ts";
 import { RobinhoodMcpData } from "./rh-mcp-data.ts";
-import { AlertManager, notify } from "./alerts.ts";
+import { CorrelationEngine } from "./correlation.ts";
+import { AlertManager, notify, sendEmailNotification } from "./alerts.ts";
 
 ensureDirs();
 
 const rh = new RobinhoodGateway();
 const rhData = new RobinhoodMcpData(rh);
+const correlation = new CorrelationEngine(rhData);
 const plugins = new PluginManager();
-const research = new ResearchManager(plugins);
+const research = new ResearchManager(plugins, async (tab) => {
+  if (tab.type === "lattice") return { "lattice.json": await correlation.lattice() };
+  return null;
+});
 const proposals = new ProposalQueue(rh, research);
 const alerts = new AlertManager(rh);
 
@@ -67,6 +72,10 @@ async function handleHttp(req: http.IncomingMessage, res: http.ServerResponse) {
         options: snapshot.options,
         crypto: snapshot.crypto,
       });
+    }
+    if (url.pathname === "/lattice") {
+      const acct = url.searchParams.get("account") || undefined;
+      return send(200, await correlation.lattice(acct));
     }
     return send(404, { error: "not found" });
   } catch (err) {
@@ -164,6 +173,9 @@ const handlers: Record<string, Handler> = {
   "account.snapshot": async ({ accountNumber }) => {
     return rhData.snapshot(accountNumber);
   },
+  "account.lattice": async ({ accountNumber }) => {
+    return correlation.lattice(accountNumber);
+  },
   "options.chain": async ({ symbol, expiration }) => {
     if (!expiration) {
       const exps = await rhData.optionExpirations(symbol);
@@ -180,6 +192,11 @@ const handlers: Record<string, Handler> = {
     alerts.remove(id);
     return { ok: true };
   },
+  "notify.emailTest": () =>
+    sendEmailNotification(
+      "Moobot Terminal email test",
+      "Email notifications are configured for Moobot Terminal.",
+    ),
   "research.runAll": () => {
     for (const tab of research.list()) if (!tab.paused) void research.run(tab.id);
     return { started: true };
@@ -194,8 +211,15 @@ const handlers: Record<string, Handler> = {
     return plugins.list();
   },
   "research.list": () => research.list(),
-  "research.create": ({ topic, notes, intervalMinutes, type, refs }) =>
-    research.create(topic, notes ?? "", intervalMinutes ?? 30, type ?? "research", refs ?? []),
+  "research.create": ({ topic, notes, intervalMinutes, type, refs, engine }) =>
+    research.create(
+      topic,
+      notes ?? "",
+      intervalMinutes ?? 30,
+      type ?? "research",
+      refs ?? [],
+      engine === "codex" ? "codex" : "claude",
+    ),
   "research.update": ({ id, ...patch }) => research.update(id, patch),
   "research.remove": ({ id }) => {
     research.remove(id);

@@ -8,9 +8,10 @@ import {
   RESEARCH_ALLOWED_TOOLS,
   RESEARCH_DISALLOWED_TOOLS,
   LENS_MODEL,
+  CODEX_MODEL,
 } from "./config.ts";
 import type { PluginManager } from "./plugins.ts";
-import { LENSES, LENS_OUTPUT, type LensTab, type LensType } from "./lenses.ts";
+import { LENSES, LENS_OUTPUT, type AgentEngine, type LensTab, type LensType } from "./lenses.ts";
 
 // Back-compat alias: tabs are now typed lenses.
 export type ResearchTab = LensTab;
@@ -25,16 +26,23 @@ interface RunningProc {
   child: ChildProcess;
 }
 
+export type DeterministicLensRunner = (
+  tab: ResearchTab,
+) => Promise<Record<string, unknown> | null>;
+
 export class ResearchManager {
   private tabs = new Map<string, ResearchTab>();
   private running = new Map<string, RunningProc>();
+  private deterministicRunning = new Set<string>();
   private timers = new Map<string, ReturnType<typeof setInterval>>();
   private plugins: PluginManager;
+  private deterministicRunner?: DeterministicLensRunner;
   onEvent?: (ev: ResearchEvent) => void;
   onProposalsMaybeChanged?: (tabId: string) => void;
 
-  constructor(plugins: PluginManager) {
+  constructor(plugins: PluginManager, deterministicRunner?: DeterministicLensRunner) {
     this.plugins = plugins;
+    this.deterministicRunner = deterministicRunner;
     this.loadAll();
     for (const tab of this.tabs.values()) this.schedule(tab);
   }
@@ -56,6 +64,7 @@ export class ResearchManager {
         ) as ResearchTab;
         // Migrate pre-lens tabs.
         if (!tab.type) tab.type = "research";
+        if (!tab.engine) tab.engine = "claude";
         if (!tab.refs) tab.refs = [];
         if (tab.lastRunStatus === "running") tab.lastRunStatus = "idle";
         this.tabs.set(tab.id, tab);
@@ -140,10 +149,12 @@ export class ResearchManager {
     intervalMinutes = 30,
     type: LensType = "research",
     refs: string[] = [],
+    engine: AgentEngine = "claude",
   ): ResearchTab {
     const tab: ResearchTab = {
       id: crypto.randomUUID().slice(0, 8),
       type,
+      engine,
       topic,
       notes,
       refs,
@@ -176,7 +187,7 @@ export class ResearchManager {
     return tab;
   }
 
-  /** For trade lenses: gather referenced tabs' latest outputs into the prompt. */
+  /** Gather referenced tabs' latest outputs into a compact prompt block. */
   private buildRefContext(tab: ResearchTab): string {
     if (!tab.refs?.length) return "";
     const parts: string[] = [];
@@ -222,12 +233,14 @@ export class ResearchManager {
   async run(id: string): Promise<void> {
     const tab = this.tabs.get(id);
     if (!tab) throw new Error(`No research tab ${id}`);
-    if (this.running.has(id)) return; // already running
+    if (this.running.has(id) || this.deterministicRunning.has(id)) return; // already running
 
     tab.lastRunStatus = "running";
     tab.lastRunAt = new Date().toISOString();
     this.persist(tab);
     this.onEvent?.({ tabId: id, kind: "run-started" });
+
+    if (await this.runDeterministicIfAvailable(tab)) return;
 
     const isFirst = tab.sessionId === null;
     const def = LENSES[tab.type] ?? LENSES.research;
@@ -247,26 +260,15 @@ export class ResearchManager {
         ...this.plugins.extraAllowedTools(),
       ]),
     ];
-    const args = [
-      "-p",
-      prompt,
-      "--model",
-      LENS_MODEL,
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--allowedTools",
-      allowedTools.join(","),
-      "--disallowedTools",
-      RESEARCH_DISALLOWED_TOOLS.join(","),
-      "--permission-mode",
-      "acceptEdits",
-    ];
-    if (tab.sessionId) args.push("--resume", tab.sessionId);
+    const spec = this.agentSpawnSpec(tab, prompt, allowedTools);
 
-    this.onEvent?.({ tabId: id, kind: "activity", text: "starting research agent…" });
+    this.onEvent?.({
+      tabId: id,
+      kind: "activity",
+      text: `starting ${this.engineName(tab.engine)} agent…`,
+    });
 
-    const child = spawn(this.claudeBin(), args, {
+    const child = spawn(spec.bin, spec.args, {
       cwd: this.tabDir(id),
       env: { ...process.env },
       stdio: ["ignore", "pipe", "pipe"],
@@ -313,9 +315,9 @@ export class ResearchManager {
         resolve();
       };
 
-      // Spawn failure (e.g. claude not found) emits 'error', not 'close'.
+      // Spawn failure (e.g. claude/codex not found) emits 'error', not 'close'.
       child.on("error", (err) => {
-        finish("error", `failed to launch claude: ${err.message}`);
+        finish("error", `failed to launch ${this.engineName(tab.engine)}: ${err.message}`);
       });
 
       // Watchdog: kill if the agent never streams, or runs too long.
@@ -324,7 +326,7 @@ export class ResearchManager {
           child.kill("SIGKILL");
           finish(
             "error",
-            "agent produced no output within 2 min (claude/MCP startup stalled)",
+            `${this.engineName(tab.engine)} produced no output within 2 min (startup stalled)`,
           );
         }
       }, 120_000);
@@ -338,10 +340,115 @@ export class ResearchManager {
       child.on("close", (code) => {
         finish(
           code === 0 ? "ok" : "error",
-          code === 0 ? null : stderr.slice(-2000) || `claude exited with code ${code}`,
+          code === 0 ? null : this.describeAgentExit(tab.engine, code, stderr),
         );
       });
     });
+  }
+
+  private agentSpawnSpec(
+    tab: ResearchTab,
+    prompt: string,
+    allowedTools: string[],
+  ): { bin: string; args: string[] } {
+    if (tab.engine === "codex") {
+      const safetyPrompt = `${prompt}
+
+RUNNER SAFETY:
+- You are running through Codex inside this tab's workspace.
+- Use the local read-only APIs documented above for Robinhood data; do not attempt direct order placement, cancellation, review tools, or WebSocket trading calls.
+- Write only the files requested by this lens contract plus proposal JSON files when justified.`;
+      const common = [
+        "--json",
+        "--skip-git-repo-check",
+        "--ignore-user-config",
+        "--sandbox",
+        "workspace-write",
+      ];
+      if (CODEX_MODEL) common.push("--model", CODEX_MODEL);
+      if (tab.sessionId) {
+        return {
+          bin: this.codexBin(),
+          args: ["--search", "exec", "resume", ...common, tab.sessionId, safetyPrompt],
+        };
+      }
+      return {
+        bin: this.codexBin(),
+        args: ["--search", "exec", ...common, safetyPrompt],
+      };
+    }
+
+    const args = [
+      "-p",
+      prompt,
+      "--model",
+      LENS_MODEL,
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--allowedTools",
+      allowedTools.join(","),
+      "--disallowedTools",
+      RESEARCH_DISALLOWED_TOOLS.join(","),
+      "--permission-mode",
+      "acceptEdits",
+    ];
+    if (tab.sessionId) args.push("--resume", tab.sessionId);
+    return { bin: this.claudeBin(), args };
+  }
+
+  private engineName(engine: AgentEngine): string {
+    return engine === "codex" ? "Codex" : "Claude Code";
+  }
+
+  private describeAgentExit(engine: AgentEngine, code: number | null, stderr: string): string {
+    const detail = stderr.trim().slice(-2000);
+    const lower = detail.toLowerCase();
+    if (lower.includes("rate limit") || lower.includes("spend limit") || lower.includes("quota")) {
+      return `${this.engineName(engine)} quota/rate limit hit. Open ${engine === "codex" ? "Codex" : "Claude Code"} in Terminal to resolve it, then rerun this lens.${detail ? `\n\n${detail}` : ""}`;
+    }
+    if (lower.includes("login") || lower.includes("auth") || lower.includes("unauthorized")) {
+      const command = engine === "codex" ? "codex login" : "claude";
+      return `${this.engineName(engine)} needs authentication. Run \`${command}\` in Terminal, finish login, then rerun this lens.${detail ? `\n\n${detail}` : ""}`;
+    }
+    const command = engine === "codex" ? "codex doctor" : "claude";
+    return detail || `${this.engineName(engine)} exited with code ${code ?? "unknown"}. Run \`${command}\` in Terminal to check auth and setup, then rerun this lens.`;
+  }
+
+  private async runDeterministicIfAvailable(tab: ResearchTab): Promise<boolean> {
+    if (!this.deterministicRunner) return false;
+    this.deterministicRunning.add(tab.id);
+    try {
+      const output = await this.deterministicRunner(tab);
+      if (!output) return false;
+      for (const [file, data] of Object.entries(output)) {
+        const target = path.join(this.tabDir(tab.id), file);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(
+          target,
+          typeof data === "string" ? data : JSON.stringify(data, null, 2),
+        );
+      }
+      tab.runCount += 1;
+      tab.lastRunStatus = "ok";
+      tab.lastError = null;
+      if (!tab.sessionId) tab.sessionId = `deterministic:${tab.type}`;
+      this.persist(tab);
+      this.onEvent?.({ tabId: tab.id, kind: "activity", text: "computed deterministic lattice…" });
+      this.onEvent?.({ tabId: tab.id, kind: "run-finished" });
+      this.onEvent?.({ tabId: tab.id, kind: "findings-updated" });
+      this.onProposalsMaybeChanged?.(tab.id);
+      return true;
+    } catch (err) {
+      tab.lastRunStatus = "error";
+      tab.lastError = String(err);
+      this.persist(tab);
+      this.onEvent?.({ tabId: tab.id, kind: "run-error", text: tab.lastError });
+      this.onEvent?.({ tabId: tab.id, kind: "run-finished" });
+      return true;
+    } finally {
+      this.deterministicRunning.delete(tab.id);
+    }
   }
 
   /** Resolve the claude binary, preferring the known install path. */
@@ -355,7 +462,26 @@ export class ResearchManager {
     }
   }
 
+  private codexBin(): string {
+    const candidates = [
+      path.join(os.homedir(), ".local", "bin", "codex"),
+      "/opt/homebrew/bin/codex",
+      "/usr/local/bin/codex",
+    ];
+    for (const candidate of candidates) {
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return candidate;
+      } catch {}
+    }
+    return "codex";
+  }
+
   private handleStreamEvent(tab: ResearchTab, ev: any) {
+    if (tab.engine === "codex") {
+      this.handleCodexStreamEvent(tab, ev);
+      return;
+    }
     // Capture the session id from any event that carries it (the init event is
     // the canonical source, but grabbing it defensively means a slow/odd init
     // never costs us --resume continuity).
@@ -384,6 +510,26 @@ export class ResearchManager {
                   : b.name;
           this.onEvent?.({ tabId: tab.id, kind: "activity", text: detail });
         }
+      }
+    }
+  }
+
+  private handleCodexStreamEvent(tab: ResearchTab, ev: any) {
+    if (ev.thread_id && tab.sessionId !== ev.thread_id) {
+      tab.sessionId = ev.thread_id;
+      this.persist(tab);
+    }
+    if (ev.type === "item.completed") {
+      const item = ev.item ?? {};
+      if (item.type === "agent_message" && item.text?.trim()) {
+        this.onEvent?.({
+          tabId: tab.id,
+          kind: "activity",
+          text: String(item.text).trim().slice(0, 500),
+        });
+      } else if (item.type === "tool_call" || item.type === "command") {
+        const label = item.name ?? item.command ?? item.type;
+        this.onEvent?.({ tabId: tab.id, kind: "activity", text: `Codex: ${label}` });
       }
     }
   }

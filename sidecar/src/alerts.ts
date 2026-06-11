@@ -6,7 +6,12 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
-import { DATA_DIR } from "./config.ts";
+import {
+  DATA_DIR,
+  NOTIFY_EMAIL_FROM,
+  NOTIFY_EMAIL_TO,
+  RESEND_API_KEY,
+} from "./config.ts";
 import type { RobinhoodGateway } from "./robinhood.ts";
 
 const ALERTS_FILE = path.join(DATA_DIR, "alerts.json");
@@ -26,12 +31,41 @@ export interface Alert {
 
 /** Fire a native macOS notification (works regardless of window focus). */
 export function notify(title: string, message: string) {
-  const escape = (s: string) => s.replace(/["\\]/g, "\\$&");
-  spawn(
-    "osascript",
-    ["-e", `display notification "${escape(message)}" with title "${escape(title)}" sound name "Glass"`],
-    { stdio: "ignore", detached: true },
-  ).unref();
+  if (process.platform === "darwin") {
+    const escape = (s: string) => s.replace(/["\\]/g, "\\$&");
+    const child = spawn(
+      "osascript",
+      ["-e", `display notification "${escape(message)}" with title "${escape(title)}" sound name "Glass"`],
+      { stdio: "ignore", detached: true },
+    );
+    child.on("error", () => {});
+    child.unref();
+  }
+  void sendEmailNotification(title, message).catch((err) => {
+    console.error(`[moobot-alerts] email notification failed: ${err}`);
+  });
+}
+
+export async function sendEmailNotification(subject: string, text: string): Promise<boolean> {
+  if (!RESEND_API_KEY || !NOTIFY_EMAIL_TO) return false;
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: NOTIFY_EMAIL_FROM,
+      to: NOTIFY_EMAIL_TO.split(",").map((s) => s.trim()).filter(Boolean),
+      subject,
+      text,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Resend ${res.status}: ${body.slice(0, 500)}`);
+  }
+  return true;
 }
 
 export class AlertManager {

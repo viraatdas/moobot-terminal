@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   client,
+  type AgentEngine,
   type AccountSnapshot,
   type ResearchEvent,
   type ResearchTab,
@@ -41,6 +42,10 @@ export default function App() {
   const [showConnection, setShowConnection] = useState(false);
   const [cloud, setCloud] = useState(false);
   const [chainSymbol, setChainSymbol] = useState<string | null>(null);
+  const [agentEngine, setAgentEngine] = useState<AgentEngine>(() => {
+    const saved = localStorage.getItem("moobot.agentEngine.v1");
+    return saved === "codex" ? "codex" : "claude";
+  });
 
   // Global cashtag clicks ($SPY anywhere) open the options chain.
   useEffect(() => {
@@ -205,6 +210,11 @@ export default function App() {
     localStorage.setItem("moobot.account.v2", num);
   }, []);
 
+  const selectAgentEngine = useCallback((engine: AgentEngine) => {
+    setAgentEngine(engine);
+    localStorage.setItem("moobot.agentEngine.v1", engine);
+  }, []);
+
   const pendingCount = useMemo(
     () => proposals.filter((p) => p.status === "pending").length,
     [proposals],
@@ -224,6 +234,8 @@ export default function App() {
         onOpenAlerts={() => setShowAlerts(true)}
         onOpenConnection={() => setShowConnection(true)}
         cloud={cloud}
+        agentEngine={agentEngine}
+        onAgentEngineChange={selectAgentEngine}
       />
       <div className="grid min-h-0 flex-1 grid-cols-[300px_1fr_340px] gap-px bg-hairline">
         <div className="col-in col-in-1 flex min-h-0 flex-col">
@@ -235,7 +247,12 @@ export default function App() {
           />
         </div>
         <div className="col-in col-in-2 flex min-h-0 flex-col">
-          <ResearchBoard tabs={tabs} feed={feed} onTabsChanged={refreshResearch} />
+          <ResearchBoard
+            tabs={tabs}
+            feed={feed}
+            agentEngine={agentEngine}
+            onTabsChanged={refreshResearch}
+          />
         </div>
         <div className="col-in col-in-3 flex min-h-0 flex-col">
           <ProposalsRail

@@ -15,9 +15,13 @@ export type LensType =
   | "lattice"
   | "trade";
 
+export type AgentEngine = "claude" | "codex";
+
 export interface LensTab {
   id: string;
   type: LensType;
+  /** Agent runner locked at tab creation. Existing tabs do not follow the UI default. */
+  engine: AgentEngine;
   /** Renameable title shown on the tab. */
   topic: string;
   notes: string;
@@ -35,8 +39,9 @@ export interface LensTab {
 
 // The local data API (sidecar HTTP) every market-aware lens can curl.
 const DATA_API = `Moobot Terminal exposes a local read-only API on http://127.0.0.1:4517 (loopback, no auth):
-- Your holdings (all accounts): curl -s "http://127.0.0.1:4517/positions" → {equities[],options[],crypto[]} each with symbol, quantity, value, unrealizedPnl, and (options) strike/expiration/delta/iv.
+- Your holdings (default account, or pass ?account=...): curl -s "http://127.0.0.1:4517/positions" → {equities[],options[],crypto[]} each with symbol, quantity, value, unrealizedPnl, and (options) strike/expiration/delta/iv.
 - Option chain: curl -s "http://127.0.0.1:4517/chain?symbol=SPY" then ...&expiration=YYYY-MM-DD.
+- Correlation lattice: curl -s "http://127.0.0.1:4517/lattice" → measured 30d/90d/252d correlations, risk-weighted relationships, clusters, and explicit measured/estimated source flags.
 This API is backed by the user's Robinhood MCP connection. If it returns {"error":...}, the user hasn't connected Robinhood yet; note that and use web research until they connect.`;
 
 const PROPOSAL_CONTRACT = `If (and only if) the evidence materially supports a trade, write ./proposals/<slug>.json: {"symbol","side":"buy"|"sell","quantity":<num>,"orderType":"market"|"limit","limitPrice":<num|null>,"thesis":"<3-5 sentences citing evidence>","confidence":1-10,"timeHorizon":"<e.g. 2 weeks>"}. You cannot place orders; a human approves every proposal. Most runs produce none.`;
@@ -53,10 +58,11 @@ export const LENSES: Record<LensType, LensDef> = {
   research: {
     label: "Research",
     extraTools: [],
-    firstPrompt: (tab) => `You are a research analyst inside Moobot Terminal. Your working directory is your workspace for this topic.
+    firstPrompt: (tab, refContext) => `You are a research analyst inside Moobot Terminal. Your working directory is your workspace for this topic.
 
 RESEARCH TOPIC: ${tab.topic}
 ${tab.notes ? `OPERATOR NOTES: ${tab.notes}` : ""}
+${refContext ? `\n${refContext}\nUse referenced lenses as prior work, but verify fresh facts before acting.` : ""}
 
 Every run:
 1. Research using web search/fetch (news, SEC EDGAR, IR pages) and Robinhood market-data tools.
@@ -65,7 +71,7 @@ Every run:
 4. ${PROPOSAL_CONTRACT}
 
 Be concrete: numbers, dates, filings, price levels. Do the first pass now.`,
-    loopPrompt: (tab) => `New research iteration on "${tab.topic}". What changed since last run (news, filings, price action)? Update ./findings.md and ./state.json. Write a proposal only if evidence now supports a trade.`,
+    loopPrompt: (tab, refContext) => `New research iteration on "${tab.topic}". What changed since last run (news, filings, price action)? ${refContext ? `\n\n${refContext}\n\nReconcile against the referenced lenses where relevant.` : ""} Update ./findings.md and ./state.json. Write a proposal only if evidence now supports a trade.`,
   },
 
   pulse: {
@@ -90,10 +96,11 @@ Be specific and current. No filler. Do the first pulse scan now.`,
   scout: {
     label: "Scout",
     extraTools: ["Bash(curl:*)"],
-    firstPrompt: (tab) => `You are the SCOUT lens inside Moobot Terminal — proactive discovery. The user is NOT giving you a topic to research; you BRING them new trade ideas that fit their style and current book.
+    firstPrompt: (tab, refContext) => `You are the SCOUT lens inside Moobot Terminal — proactive discovery. The user is NOT giving you a topic to research; you BRING them new trade ideas that fit their style and current book.
 
 STYLE / MANDATE: ${tab.topic || "find high-conviction setups that fit how this user already trades"}
 ${tab.notes ? `NOTES: ${tab.notes}` : ""}
+${refContext ? `\n${refContext}\nUse referenced lenses to avoid stale/duplicate ideas and to find adjacent setups.` : ""}
 
 ${DATA_API}
 
@@ -102,16 +109,17 @@ Every run:
 2. Maintain ./scout.json: array (max 12) of {"symbol","setup":"<the pattern/catalyst>","thesis":"<why now, 2-3 sentences>","confidence":1-10,"timeHorizon":"<e.g. 3 weeks>","direction":"long"|"short"}.
 3. ${PROPOSAL_CONTRACT}
 Quality over quantity. Do the first scout pass now.`,
-    loopPrompt: () => `New scout pass. Re-check the book, surface fresh candidates, drop stale ones. Update ./scout.json. File a proposal for any candidate that's clearly actionable now.`,
+    loopPrompt: (tab, refContext) => `New scout pass. Re-check the book, surface fresh candidates, drop stale ones.${refContext ? `\n\n${refContext}\n\nUse the referenced lenses as context for what is already known.` : ""} Update ./scout.json. File a proposal for any candidate that's clearly actionable now.`,
   },
 
   thesis: {
     label: "Thesis",
     extraTools: ["Bash(curl:*)"],
-    firstPrompt: (tab) => `You are the THESIS lens inside Moobot Terminal. The user has a market belief — a hypothesis about the world — and your job is threefold: (1) judge whether their CURRENT book actually expresses that belief, (2) source real evidence for AND against it online, and (3) bring them specific NEW tickers that would express it, that they don't already own.
+    firstPrompt: (tab, refContext) => `You are the THESIS lens inside Moobot Terminal. The user has a market belief — a hypothesis about the world — and your job is threefold: (1) judge whether their CURRENT book actually expresses that belief, (2) source real evidence for AND against it online, and (3) bring them specific NEW tickers that would express it, that they don't already own.
 
 THE USER'S THESIS: ${tab.topic}
 ${tab.notes ? `OPERATOR NOTES / NUANCE: ${tab.notes}` : ""}
+${refContext ? `\n${refContext}\nTreat referenced lenses as prior context; still source-check claims and score the book independently.` : ""}
 
 ${DATA_API}
 
@@ -135,7 +143,7 @@ Maintain ./thesis.json (rewrite each run, don't append):
 6. ${PROPOSAL_CONTRACT} (Here, a proposal closes the gap between the book and the thesis — only when the evidence and the user's intent clearly justify it.)
 
 Be concrete and current. Cite real sources. Do the first thesis pass now.`,
-    loopPrompt: (tab) => `New pass on the thesis "${tab.topic}". Re-pull the book, re-score each holding's fit, refresh online evidence (what changed — news, filings, price action?), and update the NEW-ticker ideas. Rewrite ./thesis.json. Add a proposal only if the evidence now clearly justifies acting to express the thesis.`,
+    loopPrompt: (tab, refContext) => `New pass on the thesis "${tab.topic}". Re-pull the book, re-score each holding's fit, refresh online evidence (what changed — news, filings, price action?), and update the NEW-ticker ideas.${refContext ? `\n\n${refContext}\n\nReconcile the thesis against referenced lenses, but do not copy unsupported claims.` : ""} Rewrite ./thesis.json. Add a proposal only if the evidence now clearly justifies acting to express the thesis.`,
   },
 
   exposure: {
@@ -170,15 +178,22 @@ ${tab.notes ? `NOTES: ${tab.notes}` : ""}
 ${DATA_API}
 
 Every run:
-1. Pull holdings. Build the set of underlyings the user is exposed to (option underlyings count as their stock; crypto as the coin). Estimate pairwise correlation of daily returns using your market knowledge (e.g. SPY~QQQ high, BTC~tech moderate, gold~equities low/negative). Where unsure, estimate conservatively and note it.
-2. Maintain ./lattice.json:
+1. Run the deterministic lattice API: curl -s "http://127.0.0.1:4517/lattice". This is the source of truth. It uses Robinhood MCP holdings/options exposure plus cached daily return history to compute measured correlations. Do NOT invent correlation numbers.
+2. Maintain ./lattice.json by copying the API output shape and preserving all numeric fields:
    {"updatedAt":"<iso>",
-    "nodes":[{"id":"<symbol>","symbol":"...","kind":"equity"|"option"|"crypto","value":<$ exposure>}],
-    "edges":[{"a":"<symbol>","b":"<symbol>","corr":<-1..1>}],
+    "method":"<how correlations were computed>",
+    "selectedWindow":"90d",
+    "windows":["30d","90d","252d"],
+    "grossExposure":<num>,
+    "measuredPct":<0-1>,
+    "avgCorrWeighted":<num>,
+    "nodes":[{"id":"<symbol>","symbol":"...","kind":"equity"|"option"|"crypto","value":<$ exposure>,"deltaDollars":<signed $ directional exposure>,"weight":<0-1>,"vol90":<num|null>,"betaSpy90":<num|null>}],
+    "edges":[{"a":"<symbol>","b":"<symbol>","corr":<-1..1>,"corr30":<num|null>,"corr90":<num|null>,"corr252":<num|null>,"source":"measured"|"estimated","observations":<num>,"riskContribution":<0-1>}],
+    "clusters":[{"label":"<short>","symbols":["..."],"value":<num>,"share":<0-1>,"avgCorr":<num>}],
     "insight":"<one line: the hidden concentration — e.g. 'SPY + your tech calls + BTC are effectively one beta bet (~70% of book moves together)'>"}.
-   Include an edge for every meaningful pair (|corr|>=0.3). Nodes = distinct underlyings sized by total $ exposure.
+   You may improve only the insight sentence after reading the numeric output. Never alter measured correlations, source flags, observations, or riskContribution.
 Do the first correlation pass now.`,
-    loopPrompt: () => `Recompute the correlation lattice from the current book. Update ./lattice.json (nodes by $ exposure, edges by correlation, one-line concentration insight).`,
+    loopPrompt: () => `Re-run curl -s "http://127.0.0.1:4517/lattice" and update ./lattice.json. Preserve all numeric fields/source flags from the deterministic output; only refine the insight sentence if the numeric story is clearer.`,
   },
 
   trade: {

@@ -10,7 +10,7 @@ const positions = [
 
 const feed = [
   { t: "09:31:04", line: "scanning SEC EDGAR · 3 new 13F filings reference NVDA" },
-  { t: "09:31:47", line: "HBM supply note from SK Hynix — capacity sold out through Q2 '27" },
+  { t: "09:31:47", line: "HBM supply note from SK Hynix: capacity sold out through Q2 '27" },
   { t: "09:32:13", line: "options flow: call/put ratio 2.4, skew steepening into earnings" },
   { t: "09:33:02", line: "revising thesis → hyperscaler capex guides intact, demand > supply" },
   { t: "09:33:40", line: "conviction 6 → 7 · updating findings.md" },
@@ -156,7 +156,7 @@ export function TerminalMock() {
             </div>
           </motion.div>
           <div className="text-dim text-[8px] mt-auto">
-            awaiting your approval — nothing executes without it
+            awaiting your approval. nothing executes without it
           </div>
         </div>
       </div>

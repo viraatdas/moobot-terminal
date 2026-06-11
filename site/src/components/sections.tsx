@@ -305,7 +305,7 @@ export function ResearchVisual() {
 const principles = [
   ["Native Mac", "Built for Apple Silicon. A real app, not a browser tab."],
   ["Local-first", "Your tokens, your research, your machine. Nothing phones home."],
-  ["Your sources", "Web, SEC EDGAR, market data, social sentiment — per tab."],
+  ["Your sources", "Web, SEC EDGAR, market data, social sentiment. Configured per tab."],
   ["Open source", "Read every line that touches your money."],
 ] as const;
 

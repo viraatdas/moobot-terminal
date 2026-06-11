@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Zap } from "lucide-react";
 import { fmtMoney, fmtPct, type AccountSnapshot, type Position } from "../lib/client";
 import { ChainViewer } from "./ChainViewer";
 
@@ -18,6 +19,8 @@ export function PortfolioRail({
   const [chainSymbol, setChainSymbol] = useState<string | null>(null);
 
   const pf = snapshot?.portfolio;
+  const asOf = pf?.asOf ? new Date(pf.asOf) : null;
+  const stale = asOf ? Date.now() - asOf.getTime() > 45_000 : false;
 
   return (
     <div className="flex min-h-0 flex-col bg-bg">
@@ -39,6 +42,14 @@ export function PortfolioRail({
             {pf.pnlLabel ?? "unrealized"}
           </div>
         )}
+        {asOf && (
+          <div className="mt-1 flex items-center gap-1.5 text-[9.5px] tracking-[0.12em] text-ink-faint uppercase">
+            <span className={`h-1.5 w-1.5 rounded-full ${stale ? "bg-amber" : "bg-pos live-ping"}`} />
+            <span className="font-data">
+              MCP quotes · {asOf.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            </span>
+          </div>
+        )}
         <div className="mt-2 flex items-center gap-4 text-[10px] text-ink-faint">
           {pf && <span className="font-data">cash {fmtMoney(pf.cash)}</span>}
           {agenticBuyingPower !== null && (
@@ -49,9 +60,10 @@ export function PortfolioRail({
           <div className="flex-1" />
           <button
             onClick={() => setChainSymbol("")}
-            className="rounded-sm border border-hairline px-2 py-0.5 text-[10px] text-ink-dim hover:border-amber/50 hover:text-amber"
+            className="flex items-center gap-1 rounded-sm border border-hairline px-2 py-0.5 text-[10px] text-ink-dim hover:border-amber/50 hover:text-amber"
           >
-            ⚡ Options chain
+            <Zap className="h-3 w-3" />
+            Options chain
           </button>
         </div>
       </div>

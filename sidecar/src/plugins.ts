@@ -48,11 +48,15 @@ const BUILTINS: Array<{ manifest: PluginManifest; instructions: string }> = [
       panel: { title: "Headlines" },
     },
     instructions: `## News & Web
-Use WebSearch for breaking news and analyst commentary on the topic; WebFetch promising articles.
-Prioritize primary sources and dated reporting over aggregators. Always note the publication date —
-stale news misleads. Track: catalysts, guidance changes, analyst revisions, sector reads.
+Use WebSearch for breaking news, analyst commentary, IR pages, exchange notices, and primary-source
+company updates on the topic; WebFetch promising sources before relying on them. Prioritize primary
+sources, named publications, and dated reporting over aggregators. Always note publication time/date
+and ignore stale articles unless the stale context still matters. Track: catalysts, guidance changes,
+analyst revisions, sector reads, regulatory events, and market-wide tape that directly affects the
+user's held symbols.
 Panel: maintain ./panels/news-web.json with the 3-5 most market-relevant headlines as
-[{"label": "<source · date>", "value": "<headline>", "url": "<link>", "tone": "pos"|"neg"|"neutral"}].`,
+[{"label": "<source · date>", "value": "<headline>", "url": "<link>", "tone": "pos"|"neg"|"neutral"}].
+Every headline must include a working URL and a one-line reason it matters in the main findings/lens output.`,
   },
   {
     manifest: {
@@ -64,13 +68,23 @@ Panel: maintain ./panels/news-web.json with the 3-5 most market-relevant headlin
       panel: { title: "Filings" },
     },
     instructions: `## SEC EDGAR
-Full-text search: https://efts.sec.gov/LATEST/search-index?q=%22<query>%22&dateRange=custom (or use
-https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=<name>&type=<form>&dateb=&owner=include&count=10).
-JSON API: https://data.sec.gov/submissions/CIK##########.json (10-digit zero-padded CIK) lists recent
-filings. Watch: 8-K (material events), 10-Q/10-K (fundamentals), Form 4 (insider buys/sells — cluster
-buys are a strong signal), 13F/13D (institutional position changes). Send a User-Agent header on
-curl requests (SEC requires it). Panel: maintain ./panels/sec-edgar.json with notable recent filings as
-[{"label": "<form> · <date>", "value": "<what it says, one line>", "url": "<filing link>"}].`,
+Use SEC sources whenever a company-specific claim could be checked in filings. SEC requires a
+descriptive User-Agent; use curl like:
+curl -s -H 'User-Agent: MoobotTerminal/0.1 moobot@viraat.dev' '<url>'
+
+Useful endpoints:
+- Company ticker map: https://www.sec.gov/files/company_tickers.json
+- Submissions JSON: https://data.sec.gov/submissions/CIK##########.json (10-digit zero-padded CIK)
+- Company facts JSON: https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json
+- Filing search: https://efts.sec.gov/LATEST/search-index?q=%22<query>%22&dateRange=custom
+- Browser fallback: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=<ticker-or-cik>&owner=include&count=20
+
+Watch: 8-K (material events), 10-Q/10-K (fundamentals/risk factors), Form 4 (insider buys/sells;
+clusters matter more than one-offs), 13F/13D/13G (institutional and activist changes), S-1/F-1
+(new issuance), 424B (offerings). Prefer filing detail pages or accession URLs as final sources,
+not just the search result page.
+Panel: maintain ./panels/sec-edgar.json with notable recent filings as
+[{"label": "<form> · <date>", "value": "<what it says, one line>", "url": "<filing link>", "tone": "pos"|"neg"|"neutral"}].`,
   },
   {
     manifest: {
@@ -145,9 +159,17 @@ export class PluginManager {
   private ensureBuiltins() {
     for (const b of BUILTINS) {
       const dir = path.join(PLUGINS_DIR, b.manifest.name);
-      if (fs.existsSync(path.join(dir, "plugin.json"))) continue;
+      const manifestPath = path.join(dir, "plugin.json");
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, "plugin.json"), JSON.stringify(b.manifest, null, 2));
+      let enabled = b.manifest.enabled;
+      try {
+        const existing = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as PluginManifest;
+        enabled = existing.enabled;
+      } catch {}
+      fs.writeFileSync(
+        manifestPath,
+        JSON.stringify({ ...b.manifest, enabled }, null, 2),
+      );
       fs.writeFileSync(path.join(dir, "instructions.md"), b.instructions);
     }
   }

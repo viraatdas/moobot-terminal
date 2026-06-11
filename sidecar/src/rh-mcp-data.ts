@@ -1,6 +1,6 @@
 import type { RobinhoodGateway } from "./robinhood.ts";
 
-interface PortfolioSnapshot {
+export interface PortfolioSnapshot {
   accountNumber: string;
   equity: number;
   cash: number;
@@ -12,7 +12,7 @@ interface PortfolioSnapshot {
   asOf: number;
 }
 
-interface Position {
+export interface Position {
   kind: "equity" | "option" | "crypto";
   symbol: string;
   title?: string;
@@ -31,7 +31,7 @@ interface Position {
   iv?: number | null;
 }
 
-interface OptionContract {
+export interface OptionContract {
   symbol: string;
   expirationDate: string;
   strike: number;

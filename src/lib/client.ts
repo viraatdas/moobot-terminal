@@ -1,10 +1,12 @@
 // WebSocket client for the moobot sidecar.
 
 export type LensType = "research" | "pulse" | "scout" | "thesis" | "exposure" | "lattice" | "trade";
+export type AgentEngine = "claude" | "codex";
 
 export interface ResearchTab {
   id: string;
   type: LensType;
+  engine: AgentEngine;
   topic: string;
   notes: string;
   refs: string[];

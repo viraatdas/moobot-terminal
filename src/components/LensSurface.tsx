@@ -480,15 +480,46 @@ function Stat({ label, value, signed }: { label: string; value: string; signed?:
 }
 
 /* ---------- Lattice: correlation graph (force-directed) + matrix ---------- */
+type LatticeWindow = "30d" | "90d" | "252d";
+
 interface GNode {
   id: string;
   kind: string;
   value: number;
+  deltaDollars: number;
+  weight: number;
+  vol90: number | null;
+  betaSpy90: number | null;
 }
 interface GEdge {
   a: string;
   b: string;
   corr: number;
+  corr30: number | null;
+  corr90: number | null;
+  corr252: number | null;
+  source: "measured" | "estimated";
+  observations: number;
+  riskContribution: number;
+}
+interface GCluster {
+  label: string;
+  symbols: string[];
+  value: number;
+  share: number;
+  avgCorr: number;
+}
+
+function maybeNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function corrForWindow(edge: GEdge, window: LatticeWindow): number {
+  const value =
+    window === "30d" ? edge.corr30 : window === "252d" ? edge.corr252 : edge.corr90;
+  return Math.max(-1, Math.min(1, value ?? edge.corr));
 }
 
 function normalizeLatticeNodes(rawNodes: any[]): GNode[] {
@@ -497,23 +528,39 @@ function normalizeLatticeNodes(rawNodes: any[]): GNode[] {
     const id = cleanSymbol(raw?.symbol ?? raw?.id);
     if (!id) continue;
     const value = Number(raw?.value) || 0;
+    const deltaDollars = Number(raw?.deltaDollars) || value;
+    const weight = Number(raw?.weight) || 0;
     const existing = byId.get(id);
     if (existing) {
       existing.value += value;
+      existing.deltaDollars += deltaDollars;
+      existing.weight += weight;
       if (existing.kind === "equity" && raw?.kind) existing.kind = String(raw.kind);
     } else {
       byId.set(id, {
         id,
         kind: String(raw?.kind ?? "equity").toLowerCase(),
         value,
+        deltaDollars,
+        weight,
+        vol90: maybeNumber(raw?.vol90),
+        betaSpy90: maybeNumber(raw?.betaSpy90),
       });
     }
   }
-  return [...byId.values()].sort((a, b) => b.value - a.value).slice(0, 14);
+  const rows = [...byId.values()].sort(
+    (a, b) => Math.abs(b.deltaDollars || b.value) - Math.abs(a.deltaDollars || a.value),
+  );
+  const totalWeight = rows.reduce((sum, n) => sum + n.weight, 0);
+  const gross = rows.reduce((sum, n) => sum + Math.abs(n.deltaDollars || n.value), 0) || 1;
+  return rows
+    .map((n) => ({ ...n, weight: totalWeight > 0 ? n.weight : Math.abs(n.deltaDollars || n.value) / gross }))
+    .slice(0, 14);
 }
 
 function LatticeSurface({ data }: { data: any }) {
   const [view, setView] = useState<"graph" | "matrix">("graph");
+  const [window, setWindow] = useState<LatticeWindow>("90d");
   if (!data || !Array.isArray(data.nodes) || data.nodes.length === 0)
     return <Empty>No correlation map yet. The agent maps how your holdings move together.</Empty>;
 
@@ -522,40 +569,69 @@ function LatticeSurface({ data }: { data: any }) {
     a: cleanSymbol(e.a),
     b: cleanSymbol(e.b),
     corr: Number(e.corr) || 0,
+    corr30: maybeNumber(e.corr30),
+    corr90: maybeNumber(e.corr90),
+    corr252: maybeNumber(e.corr252),
+    source: e.source === "estimated" ? "estimated" : "measured",
+    observations: Number(e.observations) || 0,
+    riskContribution: Math.max(0, Number(e.riskContribution) || 0),
   }));
+  const rawClusters: any[] = Array.isArray(data.clusters) ? data.clusters : [];
+  const clusters = rawClusters
+    .map((c): GCluster => ({
+      label: String(c.label ?? "cluster"),
+      symbols: Array.isArray(c.symbols) ? c.symbols.map((s: unknown) => cleanSymbol(s)).filter(Boolean) : [],
+      value: Number(c.value) || 0,
+      share: Math.max(0, Math.min(1, Number(c.share) || 0)),
+      avgCorr: Number(c.avgCorr) || 0,
+    }))
+    .filter((c) => c.symbols.length > 1)
+    .slice(0, 3);
 
   if (nodes.length === 0)
     return <Empty>No correlation map yet. The agent maps how your holdings move together.</Empty>;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-3 px-5 pt-4 pb-2">
+      <div className="flex shrink-0 items-start gap-3 px-5 pt-4 pb-2">
         {data.insight ? (
           <div className="min-w-0 flex-1 rounded-sm border border-amber/25 bg-amber-dim/40 px-3 py-2 text-[12px] leading-snug text-amber select-text">
             <Cashtags text={data.insight} />
+            <div className="mt-1 font-data text-[9.5px] text-amber/70">
+              {Math.round((Number(data.measuredPct) || 0) * 100)}% measured · gross{" "}
+              {fmtMoney(data.grossExposure)} · {data.method ?? "return correlations"}
+            </div>
           </div>
         ) : (
           <div className="flex-1" />
         )}
-        <div className="flex shrink-0 overflow-hidden rounded-sm border border-hairline">
-          {(["graph", "matrix"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-2.5 py-1 text-[10px] font-medium tracking-wide uppercase ${
-                view === v ? "bg-amber-dim text-amber" : "text-ink-faint hover:text-ink-dim"
-              }`}
-            >
-              {v}
-            </button>
-          ))}
+        <div className="flex shrink-0 flex-col gap-1.5">
+          <Segmented
+            value={window}
+            values={["30d", "90d", "252d"] as const}
+            labels={{ "30d": "30D", "90d": "90D", "252d": "1Y" }}
+            onChange={setWindow}
+          />
+          <Segmented
+            value={view}
+            values={["graph", "matrix"] as const}
+            labels={{ graph: "Graph", matrix: "Matrix" }}
+            onChange={setView}
+          />
         </div>
       </div>
 
+      {(clusters.length > 0 || edges.length > 0) && (
+        <div className="grid shrink-0 grid-cols-[1fr_1fr] gap-px border-y border-hairline bg-hairline">
+          <ClusterStrip clusters={clusters} />
+          <RelationshipStrip nodes={nodes} edges={edges} window={window} />
+        </div>
+      )}
+
       {view === "graph" ? (
-        <LatticeGraph nodes={nodes} edges={edges} />
+        <LatticeGraph nodes={nodes} edges={edges} window={window} />
       ) : (
-        <LatticeMatrix nodes={nodes} edges={edges} />
+        <LatticeMatrix nodes={nodes} edges={edges} window={window} />
       )}
 
       <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-1 px-5 py-2 text-[9.5px] text-ink-faint">
@@ -573,28 +649,136 @@ function LatticeSurface({ data }: { data: any }) {
           />
           move opposite
         </span>
-        <span>node size = $ exposure · click a node for its chain · top 14 holdings</span>
+        <span>line width = relationship score · dashed = estimated · node size = $ exposure</span>
       </div>
     </div>
   );
 }
 
-function LatticeGraph({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
+function Segmented<T extends string>({
+  value,
+  values,
+  labels,
+  onChange,
+}: {
+  value: T;
+  values: readonly T[];
+  labels: Record<T, string>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex overflow-hidden rounded-sm border border-hairline">
+      {values.map((v) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          className={`px-2.5 py-1 text-[10px] font-medium tracking-wide uppercase ${
+            value === v ? "bg-amber-dim text-amber" : "text-ink-faint hover:text-ink-dim"
+          }`}
+        >
+          {labels[v]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ClusterStrip({ clusters }: { clusters: GCluster[] }) {
+  return (
+    <div className="min-w-0 bg-bg px-5 py-2">
+      <div className="mb-1 text-[9px] tracking-[0.14em] uppercase text-ink-faint">clusters</div>
+      {clusters.length === 0 ? (
+        <div className="text-[11px] text-ink-faint">No dominant high-correlation cluster.</div>
+      ) : (
+        <div className="flex min-w-0 gap-2 overflow-hidden">
+          {clusters.map((c) => (
+            <div key={c.label} className="min-w-0 rounded-sm border border-hairline bg-panel px-2 py-1">
+              <div className="truncate text-[11px] font-semibold text-ink">{c.label}</div>
+              <div className="font-data text-[9.5px] text-ink-faint">
+                {Math.round(c.share * 100)}% · corr {c.avgCorr.toFixed(2)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RelationshipStrip({
+  nodes,
+  edges,
+  window,
+}: {
+  nodes: GNode[];
+  edges: GEdge[];
+  window: LatticeWindow;
+}) {
+  const nodeSet = new Set(nodes.map((n) => n.id));
+  const top = edges
+    .filter((e) => nodeSet.has(e.a) && nodeSet.has(e.b))
+    .sort((a, b) => b.riskContribution - a.riskContribution)
+    .slice(0, 3);
+  return (
+    <div className="min-w-0 bg-bg px-5 py-2">
+      <div className="mb-1 text-[9px] tracking-[0.14em] uppercase text-ink-faint">strongest relationships</div>
+      {top.length === 0 ? (
+        <div className="text-[11px] text-ink-faint">No pair relationships yet.</div>
+      ) : (
+        <div className="space-y-1">
+          {top.map((e) => {
+            const c = corrForWindow(e, window);
+            return (
+              <div key={`${e.a}-${e.b}`} className="flex items-center gap-2 text-[11px]">
+                <span className="font-data min-w-0 flex-1 truncate text-ink">
+                  {e.a}/{e.b}
+                </span>
+                <span className={c >= 0 ? "text-pos" : "text-neg"}>{c.toFixed(2)}</span>
+                <span className="font-data text-ink-faint">
+                  {(e.riskContribution * 100).toFixed(1)}%
+                </span>
+                <span className={e.source === "measured" ? "text-ink-faint" : "text-amber"}>
+                  {e.source}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LatticeGraph({
+  nodes,
+  edges,
+  window,
+}: {
+  nodes: GNode[];
+  edges: GEdge[];
+  window: LatticeWindow;
+}) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 680, h: 440 });
   const [pos, setPos] = useState<Record<string, { x: number; y: number }>>({});
   const [hover, setHover] = useState<string | null>(null);
 
   const nodeKey = nodes.map((n) => `${n.id}:${n.kind}:${Math.round(n.value)}`).join("|");
-  const maxVal = Math.max(1, ...nodes.map((n) => Math.abs(n.value) || 0));
+  const maxVal = Math.max(1, ...nodes.map((n) => Math.abs(n.deltaDollars || n.value) || 0));
   const radiusOf = (v: number) => 9 + 24 * Math.sqrt((Math.abs(v) || 0) / maxVal);
 
   const gEdges = useMemo<GEdge[]>(() => {
     const set = new Set(nodes.map((n) => n.id));
     return edges
-      .map((e) => ({ a: e.a, b: e.b, corr: Math.max(-1, Math.min(1, e.corr)) }))
-      .filter((e) => e.a !== e.b && set.has(e.a) && set.has(e.b) && Math.abs(e.corr) >= 0.15);
-  }, [nodeKey, edges]);
+      .map((e) => ({ ...e, corr: corrForWindow(e, window) }))
+      .filter(
+        (e) =>
+          e.a !== e.b &&
+          set.has(e.a) &&
+          set.has(e.b) &&
+          (Math.abs(e.corr) >= 0.15 || e.riskContribution >= 0.02),
+      );
+  }, [nodeKey, edges, window]);
 
   // The running sim reads the latest edges through a ref, so correlation
   // updates don't force a full re-layout (which would visually reset).
@@ -626,7 +810,7 @@ function LatticeGraph({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
         y: cy + Math.sin(ang) * rr,
         vx: 0,
         vy: 0,
-        r: radiusOf(n.value),
+        r: radiusOf(n.deltaDollars || n.value),
       };
     });
     const byId = new Map(sim.map((s) => [s.id, s]));
@@ -666,8 +850,8 @@ function LatticeGraph({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
           }
         }
       }
-      // correlation springs: short rest length for positive corr (cluster),
-      // long for negative (push apart). Strength scales with |corr|.
+      // correlation springs: positive corr clusters, negative corr separates.
+      // Strength scales with the pair's contribution to portfolio relationship risk.
       for (const e of edgesRef.current) {
         const a = byId.get(e.a);
         const b = byId.get(e.b);
@@ -676,7 +860,7 @@ function LatticeGraph({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
         const dy = b.y - a.y;
         const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
         const rest = 80 + (1 - e.corr) * 70; // corr 1 -> 80px, corr -1 -> 220px
-        const k = 0.025 * Math.abs(e.corr);
+        const k = 0.012 + 0.05 * Math.sqrt(Math.min(0.25, e.riskContribution) / 0.25);
         const f = (d - rest) * k;
         const ux = dx / d;
         const uy = dy / d;
@@ -735,7 +919,8 @@ function LatticeGraph({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
           if (!a || !b) return null;
           const active = !hover || e.a === hover || e.b === hover;
           const col = e.corr >= 0 ? "63,220,151" : "255,93,93";
-          const op = (0.12 + 0.5 * Math.abs(e.corr)) * (active ? 1 : 0.1);
+          const relation = Math.min(0.35, e.riskContribution);
+          const op = (0.1 + 0.55 * Math.max(Math.abs(e.corr), relation / 0.35)) * (active ? 1 : 0.1);
           return (
             <line
               key={i}
@@ -744,14 +929,21 @@ function LatticeGraph({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
               x2={b.x}
               y2={b.y}
               stroke={`rgba(${col},${op})`}
-              strokeWidth={1 + 3 * Math.abs(e.corr)}
-            />
+              strokeWidth={1 + 7 * Math.sqrt(relation / 0.35)}
+              strokeDasharray={e.source === "estimated" ? "5 5" : undefined}
+            >
+              <title>
+                {`${e.a}/${e.b} ${window}: ${e.corr.toFixed(2)} · relationship ${(e.riskContribution * 100).toFixed(
+                  1,
+                )}% · ${e.source}${e.observations ? ` · ${e.observations} obs` : ""}`}
+              </title>
+            </line>
           );
         })}
         {nodes.map((n) => {
           const p = pos[n.id];
           if (!p) return null;
-          const r = radiusOf(n.value);
+          const r = radiusOf(n.deltaDollars || n.value);
           const dim = !!hover && hover !== n.id && !hoverNeighbors.includes(n.id);
           const col = kindColor(n.kind);
           return (
@@ -796,8 +988,13 @@ function LatticeGraph({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
           }}
         >
           <div className="font-data text-[11px] font-semibold text-ink">{hoverNode.id}</div>
-          <div className="text-[9.5px] text-ink-faint">
-            {hoverNode.kind} · {fmtMoney(hoverNode.value)}
+          <div className="text-[9.5px] text-ink-faint">{hoverNode.kind} · {fmtMoney(hoverNode.value)}</div>
+          <div className="font-data text-[9.5px] text-ink-faint">
+            delta {fmtMoney(hoverNode.deltaDollars)} · wt {(hoverNode.weight * 100).toFixed(1)}%
+          </div>
+          <div className="font-data text-[9.5px] text-ink-faint">
+            vol {hoverNode.vol90 !== null ? `${Math.round(hoverNode.vol90 * 100)}%` : "—"} · beta{" "}
+            {hoverNode.betaSpy90 !== null ? hoverNode.betaSpy90.toFixed(2) : "—"}
           </div>
         </div>
       )}
@@ -805,12 +1002,20 @@ function LatticeGraph({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
   );
 }
 
-function LatticeMatrix({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
+function LatticeMatrix({
+  nodes,
+  edges,
+  window,
+}: {
+  nodes: GNode[];
+  edges: GEdge[];
+  window: LatticeWindow;
+}) {
   const syms = nodes.map((n) => n.id);
   const corr = (a: string, b: string): number | null => {
     if (a === b) return 1;
     const e = edges.find((x) => (x.a === a && x.b === b) || (x.a === b && x.b === a));
-    return e ? e.corr : null;
+    return e ? corrForWindow(e, window) : null;
   };
   const cellColor = (c: number | null) => {
     if (c === null) return "transparent";
@@ -841,7 +1046,7 @@ function LatticeMatrix({ nodes, edges }: { nodes: GNode[]; edges: GEdge[] }) {
                 return (
                   <td
                     key={b}
-                    title={c !== null ? `${a}/${b}: ${c.toFixed(2)}` : `${a}/${b}: —`}
+                    title={c !== null ? `${a}/${b} ${window}: ${c.toFixed(2)}` : `${a}/${b}: —`}
                     className="h-7 w-7 border border-bg text-center"
                     style={{ background: cellColor(c) }}
                   >

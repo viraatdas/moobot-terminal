@@ -1,0 +1,13 @@
+{
+  "name": "Moobot Terminal",
+  "short_name": "moobot",
+  "description": "A Mac trading terminal with an AI research desk.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
