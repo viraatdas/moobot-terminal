@@ -45,7 +45,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 /** A clickable $TICKER pill that opens the options chain. */
 function Ticker({ sym }: { sym: string }) {
   const s = cleanSymbol(sym);
-  if (!s) return <span className="text-ink-faint">—</span>;
+  if (!s) return <span className="text-ink-faint">n/a</span>;
   return (
     <button className="cashtag" onClick={() => openTicker(s)}>
       ${s}
@@ -205,7 +205,7 @@ function ThesisSurface({ data }: { data: any }) {
   if (!data)
     return (
       <Empty>
-        No thesis yet. State a belief — the agent scores your book against it, sources evidence
+        No thesis yet. State a belief - the agent scores your book against it, sources evidence
         online, and finds tickers that fit.
       </Empty>
     );
@@ -250,7 +250,7 @@ function ThesisSurface({ data }: { data: any }) {
         <SectionLabel>Your book vs. this thesis</SectionLabel>
         {holdings.length === 0 ? (
           <div className="text-[11.5px] text-ink-faint">
-            No positions read — connect your full account to score the book.
+            No positions read - connect your full account to score the book.
           </div>
         ) : (
           <div className="space-y-1">
@@ -993,8 +993,8 @@ function LatticeGraph({
             delta {fmtMoney(hoverNode.deltaDollars)} · wt {(hoverNode.weight * 100).toFixed(1)}%
           </div>
           <div className="font-data text-[9.5px] text-ink-faint">
-            vol {hoverNode.vol90 !== null ? `${Math.round(hoverNode.vol90 * 100)}%` : "—"} · beta{" "}
-            {hoverNode.betaSpy90 !== null ? hoverNode.betaSpy90.toFixed(2) : "—"}
+            vol {hoverNode.vol90 !== null ? `${Math.round(hoverNode.vol90 * 100)}%` : "n/a"} · beta{" "}
+            {hoverNode.betaSpy90 !== null ? hoverNode.betaSpy90.toFixed(2) : "n/a"}
           </div>
         </div>
       )}
@@ -1046,7 +1046,7 @@ function LatticeMatrix({
                 return (
                   <td
                     key={b}
-                    title={c !== null ? `${a}/${b} ${window}: ${c.toFixed(2)}` : `${a}/${b}: —`}
+                    title={c !== null ? `${a}/${b} ${window}: ${c.toFixed(2)}` : `${a}/${b}: n/a`}
                     className="h-7 w-7 border border-bg text-center"
                     style={{ background: cellColor(c) }}
                   >

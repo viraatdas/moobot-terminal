@@ -38,7 +38,7 @@ export function ConnectionModal({ onClose }: { onClose: () => void }) {
           <input
             value={host}
             onChange={(e) => setHost(e.target.value)}
-            placeholder="cloud host — e.g. moobot-sidecar.fly.dev"
+            placeholder="cloud host - e.g. moobot-sidecar.fly.dev"
             className={inputCls}
           />
           <input

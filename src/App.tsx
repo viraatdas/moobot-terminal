@@ -160,7 +160,7 @@ export default function App() {
         setAccounts(list);
         if (!accountNumber && list.length > 0) {
           // Default the VIEW to Robinhood's default account (your real holdings),
-          // not the agentic trading account — that one is usually empty and would
+          // not the agentic trading account - that one is usually empty and would
           // show a wall of $0. Trading is routed separately (see tradeAccount).
           const preferred =
             list.find((a: any) => a?.is_default) ??

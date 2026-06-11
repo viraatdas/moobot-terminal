@@ -78,21 +78,21 @@ export function ChainViewer({
   const cell = (c: OptionContract | undefined) =>
     c ? (
       <>
-        <td className="px-2 text-right text-ink">{c.mark != null ? c.mark.toFixed(2) : "—"}</td>
+        <td className="px-2 text-right text-ink">{c.mark != null ? c.mark.toFixed(2) : "n/a"}</td>
         <td className="px-2 text-right text-ink-dim">
-          {c.delta != null ? c.delta.toFixed(2) : "—"}
+          {c.delta != null ? c.delta.toFixed(2) : "n/a"}
         </td>
         <td className="px-2 text-right text-ink-dim">
-          {c.iv != null ? `${(c.iv * 100).toFixed(0)}%` : "—"}
+          {c.iv != null ? `${(c.iv * 100).toFixed(0)}%` : "n/a"}
         </td>
-        <td className="px-2 text-right text-ink-faint">{c.openInterest ?? "—"}</td>
+        <td className="px-2 text-right text-ink-faint">{c.openInterest ?? "n/a"}</td>
       </>
     ) : (
       <>
-        <td className="px-2 text-right text-ink-faint">—</td>
-        <td className="px-2 text-right text-ink-faint">—</td>
-        <td className="px-2 text-right text-ink-faint">—</td>
-        <td className="px-2 text-right text-ink-faint">—</td>
+        <td className="px-2 text-right text-ink-faint">n/a</td>
+        <td className="px-2 text-right text-ink-faint">n/a</td>
+        <td className="px-2 text-right text-ink-faint">n/a</td>
+        <td className="px-2 text-right text-ink-faint">n/a</td>
       </>
     );
 

@@ -1,6 +1,6 @@
 import { marked } from "marked";
 
-// $TICKER detection — a $ followed by 1-6 letters (so "$122" / "$5.31" don't match).
+// $TICKER detection - a $ followed by 1-6 letters (so "$122" / "$5.31" don't match).
 const CASHTAG_RE = /\$([A-Za-z]{1,6})\b/g;
 
 /** Fire a global event so any surface can open the chain for a clicked ticker. */

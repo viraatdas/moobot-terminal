@@ -24,13 +24,13 @@ export const LENS_META: Record<
   LensType,
   { label: string; glyph: string; blurb: string; hasTopic: boolean }
 > = {
-  research: { label: "Research", glyph: "◎", blurb: "Deep dive on a topic — living thesis + proposals", hasTopic: true },
-  pulse: { label: "Pulse", glyph: "◇", blurb: "Live heartbeat — what's moving in your book right now", hasTopic: true },
-  scout: { label: "Scout", glyph: "◆", blurb: "Discovery — brings you new setups unprompted", hasTopic: true },
-  thesis: { label: "Thesis", glyph: "✛", blurb: "Test your belief — does your book back it? what fits?", hasTopic: true },
-  exposure: { label: "Exposure", glyph: "▦", blurb: "Risk — net delta, scenarios over your book", hasTopic: false },
-  lattice: { label: "Lattice", glyph: "⬡", blurb: "Correlation map across all your holdings", hasTopic: false },
-  trade: { label: "Trade", glyph: "▲", blurb: "Turn intent + @other tabs into trade proposals", hasTopic: true },
+  research: { label: "Research", glyph: "◎", blurb: "Build a sourced brief on one ticker, theme, or catalyst.", hasTopic: true },
+  pulse: { label: "Pulse", glyph: "◇", blurb: "Watch your book for fresh moves, headlines, and expiry risk.", hasTopic: true },
+  scout: { label: "Scout", glyph: "◆", blurb: "Find new setups that fit your holdings and trading style.", hasTopic: true },
+  thesis: { label: "Thesis", glyph: "✛", blurb: "Check whether your positions actually express a belief.", hasTopic: true },
+  exposure: { label: "Exposure", glyph: "▦", blurb: "Show directional risk, concentration, and scenario P&L.", hasTopic: false },
+  lattice: { label: "Lattice", glyph: "⬡", blurb: "Reveal hidden correlation clusters and one-bet risk.", hasTopic: false },
+  trade: { label: "Trade", glyph: "▲", blurb: "Turn intent and tab context into approval-ready proposals.", hasTopic: true },
 };
 
 export interface ResearchState {
@@ -232,7 +232,7 @@ export const client = new SidecarClient();
 
 export function fmtMoney(v: number | string | null | undefined): string {
   const n = Number(v);
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return "n/a";
   return n.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
@@ -242,6 +242,6 @@ export function fmtMoney(v: number | string | null | undefined): string {
 }
 
 export function fmtPct(v: number | null | undefined): string {
-  if (v === null || v === undefined || !Number.isFinite(v)) return "—";
+  if (v === null || v === undefined || !Number.isFinite(v)) return "n/a";
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
 }

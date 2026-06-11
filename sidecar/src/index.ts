@@ -97,7 +97,7 @@ function listen(attempt = 0) {
   });
   httpServer.on("error", (err: NodeJS.ErrnoException) => {
     // A previous sidecar may still hold the port for a moment (app relaunch,
-    // dev instance shutting down) — retry before giving up.
+    // dev instance shutting down) - retry before giving up.
     if (err.code === "EADDRINUSE" && attempt < 10) {
       console.error(`[moobot-sidecar] port ${WS_PORT} in use, retry ${attempt + 1}/10`);
       httpServer.close();
@@ -165,7 +165,7 @@ const handlers: Record<string, Handler> = {
   },
   "rh.call": async ({ tool, args }) => {
     if (/^(place|cancel)_.*_order$/.test(tool)) {
-      throw new Error(`${tool} is not callable via rh.call — use the approval flow`);
+      throw new Error(`${tool} is not callable via rh.call - use the approval flow`);
     }
     return rh.callTool(tool, args ?? {});
   },
@@ -230,7 +230,7 @@ const handlers: Record<string, Handler> = {
     return { started: true };
   },
   "research.findings": ({ id }) => research.findings(id),
-  // Manual order ticket — human-initiated from the UI. Review first, then place.
+  // Manual order ticket - human-initiated from the UI. Review first, then place.
   "trade.review": ({ order }) => rh.callTool("review_equity_order", order),
   "trade.place": async ({ order, confirmed }) => {
     if (confirmed !== true) throw new Error("Order not confirmed by user");

@@ -41,7 +41,7 @@ body,
   cursor: default;
 }
 
-/* grain — keeps the big dark fields from feeling flat */
+/* grain - keeps the big dark fields from feeling flat */
 #root::after {
   content: "";
   pointer-events: none;

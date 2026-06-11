@@ -30,7 +30,7 @@ export function PortfolioRail({
           Account value
         </div>
         <div className="font-data mt-0.5 text-[22px] font-semibold text-ink">
-          {pf ? fmtMoney(pf.equity) : "—"}
+          {pf ? fmtMoney(pf.equity) : "n/a"}
         </div>
         {pf && (
           <div

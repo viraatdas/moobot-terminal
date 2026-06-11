@@ -172,7 +172,7 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
     [active, closeTab, onTabsChanged, runActive, selectAdjacent, selectIndexedTab, tabs.length],
   );
 
-  // "Auto" — create or refresh a curated starter cockpit of book-wide lenses.
+  // "Auto" - create or refresh a curated starter cockpit of book-wide lenses.
   async function autoSetup() {
     if (autoBusy) return;
     setAutoBusy(true);
@@ -302,7 +302,7 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
     };
   }, [active?.id]);
 
-  // Most recent agent action for the active tab (feed is newest-first) — shown
+  // Most recent agent action for the active tab (feed is newest-first) - shown
   // as a slim live line in the header while a run is in progress.
   const latestActivity = active ? (feed.find((f) => f.tabId === active.id)?.text ?? null) : null;
 
@@ -656,14 +656,14 @@ function NewTabForm({
   const meta = LENS_META[type];
   const topicLabel =
     type === "trade"
-      ? "What do you want to do? — e.g. hedge my tech concentration, add to NVDA on dips"
+      ? "Intent, e.g. hedge my tech concentration, add to NVDA on dips"
       : type === "pulse"
-        ? "Focus (optional) — blank = your whole book + market"
+        ? "Focus optional, blank scans your whole book + market"
         : type === "scout"
-          ? "Mandate (optional) — e.g. high-IV options setups, small-cap momentum"
+          ? "Mandate optional, e.g. high-IV options setups, small-cap momentum"
           : type === "thesis"
-            ? "Your belief — e.g. AI power demand outruns the grid; rate cuts come slower than priced"
-            : "Topic — e.g. NVDA earnings setup, uranium miners, AI capex cycle";
+            ? "Belief, e.g. AI power demand outruns the grid; rate cuts come slower than priced"
+            : "Topic, e.g. NVDA earnings setup, uranium miners, AI capex cycle";
 
   async function create() {
     if (meta.hasTopic && type !== "pulse" && type !== "scout" && !topic.trim()) return;
@@ -695,6 +695,7 @@ function NewTabForm({
             <button
               key={t}
               onClick={() => setType(t)}
+              title={`${m.label}: ${m.blurb}`}
               className={`flex flex-col items-center gap-1 rounded-sm border px-1 py-2 transition-colors ${
                 type === t
                   ? "border-amber/50 bg-amber-dim text-amber"
@@ -707,7 +708,17 @@ function NewTabForm({
           );
         })}
       </div>
-      <p className="mb-2 text-[11px] text-ink-faint">{meta.blurb}</p>
+      <div className="mb-3 flex items-start gap-2 rounded-sm border border-hairline bg-bg px-3 py-2">
+        <div className="mt-0.5 text-amber">
+          <LensIcon type={type} className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold tracking-[0.12em] text-ink-dim uppercase">
+            {meta.label}
+          </div>
+          <div className="text-[12px] leading-snug text-ink">{meta.blurb}</div>
+        </div>
+      </div>
       <div className="mb-2 inline-flex items-center gap-1.5 rounded-sm border border-hairline bg-bg px-2 py-1 text-[10px] tracking-[0.12em] text-ink-faint uppercase">
         new tab engine
         <EngineBadge engine={agentEngine} />

@@ -101,7 +101,7 @@ Panel: maintain ./panels/sec-edgar.json with notable recent filings as
     },
     instructions: `## Market Data
 Use the Robinhood tools for real-time quotes (get_equity_quotes takes a symbols array) and symbol
-lookup (search). Compare price to your prior run's level — note moves >2% and volume context if
+lookup (search). Compare price to your prior run's level - note moves >2% and volume context if
 available. Panel: maintain ./panels/market-data.json with the key tickers as
 [{"label": "<SYMBOL>", "value": "<price>", "detail": "<change vs last run / level that matters>",
 "tone": "pos"|"neg"|"neutral"}].`,
@@ -125,7 +125,7 @@ Moobot Terminal exposes a local read-only API on http://127.0.0.1:4517 for live 
 - Held positions (all accounts): \`curl -s "http://127.0.0.1:4517/positions"\`.
 Use these to analyze setups: ATM/OTM strikes, IV level vs history, delta for directional
 exposure, OI/volume for liquidity. If the API returns {"error": ...} the user hasn't
-connected Robinhood yet — note that and fall back to equity analysis.
+connected Robinhood yet - note that and fall back to equity analysis.
 Panel: maintain ./panels/options.json with notable contracts as
 [{"label": "<SYM strike C/P exp>", "value": "<mark>", "detail": "<delta/IV/OI>"}].`,
   },
@@ -141,7 +141,7 @@ Panel: maintain ./panels/options.json with notable contracts as
     instructions: `## Social Sentiment
 Reddit JSON API needs no auth: https://www.reddit.com/r/wallstreetbets/search.json?q=<ticker>&sort=new&restrict_sr=1&limit=10
 (also r/stocks, r/investing; send a User-Agent header). For X, use WebSearch with site:x.com or news
-coverage of the chatter. Sentiment is noisy and contrarian at extremes — euphoric retail tops, capitulation
+coverage of the chatter. Sentiment is noisy and contrarian at extremes - euphoric retail tops, capitulation
 bottoms. Weight volume-of-mentions changes over absolute counts. Panel: maintain
 ./panels/social-sentiment.json as [{"label": "<venue>", "value": "<read in one line>",
 "tone": "pos"|"neg"|"neutral"}].`,
@@ -222,7 +222,7 @@ export class PluginManager {
     const enabled = this.enabled();
     if (enabled.length === 0) return "";
     const sections = enabled.map((p) => p.instructions.trim()).join("\n\n");
-    return `\n\nSOURCE PLUGINS — use these on every run where relevant:\n${sections}\n\nPanels: write each panel file as a JSON array into ./panels/ (create the directory if needed). Keep panels current — they render directly in the terminal UI.`;
+    return `\n\nSOURCE PLUGINS - use these on every run where relevant:\n${sections}\n\nPanels: write each panel file as a JSON array into ./panels/ (create the directory if needed). Keep panels current - they render directly in the terminal UI.`;
   }
 
   /** Extra --allowedTools entries from enabled plugins. */

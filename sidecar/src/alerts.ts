@@ -159,7 +159,7 @@ export class AlertManager {
         changed = true;
         notify(
           `${a.symbol} ${a.op} ${a.price}`,
-          `Now ${price.toFixed(2)}${a.note ? ` — ${a.note}` : ""}`,
+          `Now ${price.toFixed(2)}${a.note ? ` - ${a.note}` : ""}`,
         );
         this.onTriggered?.(a);
       }

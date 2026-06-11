@@ -19,18 +19,18 @@ Code Robinhood MCP login. There is no `rh_auth`/web-token setup.
 
 ## What it does
 
-- **Trade from the terminal** — portfolio, positions, quotes, and an order
+- **Trade from the terminal** - portfolio, positions, quotes, and an order
   ticket over Robinhood MCP. View the main/default account; approved orders
   route only through Robinhood's agentic trading account.
-- **Hyper research tabs** — drop a topic ("NVDA earnings setup", "uranium
+- **Hyper research tabs** - drop a topic ("NVDA earnings setup", "uranium
   miners") and a headless Claude Code or Codex agent works it continuously:
   news, SEC filings, price action, social sentiment, maintained as a living
   thesis with a live activity feed. The top-right engine switch applies only to
   newly-created tabs; existing tabs keep the engine they started with.
-- **Trade proposals, human trigger** — agents file proposals with thesis and
+- **Trade proposals, human trigger** - agents file proposals with thesis and
   confidence; nothing executes without your explicit approval. Agent trading
   uses Robinhood's agentic accounts (`agentic_allowed=true`).
-- **Source plugins** — skill packs in
+- **Source plugins** - skill packs in
   `~/Library/Application Support/MoobotTerminal/plugins/` that extend agent
   instructions/tools and render data panels in the UI. Four built-ins:
   news-web, sec-edgar, market-data, social-sentiment. Drop in your own.

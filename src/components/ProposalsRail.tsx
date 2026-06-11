@@ -35,7 +35,7 @@ export function ProposalsRail({
           <div className="py-5 text-center text-[11.5px] leading-relaxed text-ink-faint">
             No pending proposals.
             <br />
-            Research agents file trades here when the evidence is there — nothing executes
+            Research agents file trades here when the evidence is there - nothing executes
             without your approval.
           </div>
         )}
@@ -250,7 +250,7 @@ function OrderTicket({
       {!agentic && (
         <div className="mb-2 rounded-sm border border-amber/25 bg-amber-dim px-2 py-1.5 text-[10px] leading-snug text-amber">
           No agentic account found. Robinhood only allows orders from an
-          agent-enabled account — enable one in the Robinhood app to trade here.
+          agent-enabled account - enable one in the Robinhood app to trade here.
         </div>
       )}
       <div className="grid grid-cols-[1fr_76px] gap-2">
