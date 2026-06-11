@@ -179,6 +179,19 @@ function clampCorr(value: number): number {
   return Math.max(-1, Math.min(1, value));
 }
 
+function finiteNumber(value: unknown): number | null {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function exposureAmount(node: { deltaDollars?: unknown; value?: unknown }): number {
+  return finiteNumber(node.deltaDollars) ?? finiteNumber(node.value) ?? 0;
+}
+
+function exposureMagnitude(node: { deltaDollars?: unknown; value?: unknown }): number {
+  return Math.abs(exposureAmount(node));
+}
+
 function estimateCorr(a: string, b: string): number {
   const pair = new Set([a, b]);
   if (a === b) return 1;
@@ -294,7 +307,7 @@ function aggregateNodes(legs: Leg[], histories: Map<string, History>): ExposureN
   }
   const nodes = [...bySymbol.values()];
   for (const n of nodes) if (n.optionSeen) n.kind = "option";
-  const gross = nodes.reduce((sum, n) => sum + Math.abs(n.deltaDollars || n.value), 0) || 1;
+  const gross = nodes.reduce((sum, n) => sum + exposureMagnitude(n), 0) || 1;
   return nodes
     .map((node) => ({
       id: node.id,
@@ -302,11 +315,11 @@ function aggregateNodes(legs: Leg[], histories: Map<string, History>): ExposureN
       kind: node.kind,
       value: node.value,
       deltaDollars: node.deltaDollars,
-      weight: Math.abs(node.deltaDollars || node.value) / gross,
+      weight: exposureMagnitude(node) / gross,
       vol90: node.vol90,
       betaSpy90: node.betaSpy90,
     }))
-    .sort((a, b) => Math.abs(b.deltaDollars || b.value) - Math.abs(a.deltaDollars || a.value));
+    .sort((a, b) => exposureMagnitude(b) - exposureMagnitude(a));
 }
 
 function annualVol(points: ReturnPoint[], window: number): number | null {
@@ -336,11 +349,14 @@ function unionClusters(nodes: ExposureNode[], edges: LatticeEdge[]): LatticeClus
     byRoot.set(root, [...(byRoot.get(root) ?? []), n.id]);
   }
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
-  const gross = nodes.reduce((sum, n) => sum + n.value, 0) || 1;
+  const gross = nodes.reduce((sum, n) => sum + exposureMagnitude(n), 0) || 1;
   return [...byRoot.values()]
     .filter((symbols) => symbols.length > 1)
     .map((symbols) => {
-      const value = symbols.reduce((sum, s) => sum + (nodeById.get(s)?.value ?? 0), 0);
+      const value = symbols.reduce((sum, s) => {
+        const node = nodeById.get(s);
+        return sum + (node ? exposureMagnitude(node) : 0);
+      }, 0);
       const pairCorrs = edges
         .filter((e) => symbols.includes(e.a) && symbols.includes(e.b))
         .map((e) => e.corr);
@@ -445,7 +461,7 @@ export class CorrelationEngine {
       method: "MCP exposures + cached daily log-return correlations; estimated edges are explicitly marked",
       selectedWindow: "90d",
       windows: ["30d", "90d", "252d"],
-      grossExposure: nodes.reduce((sum, n) => sum + Math.abs(n.deltaDollars || n.value), 0),
+      grossExposure: nodes.reduce((sum, n) => sum + exposureMagnitude(n), 0),
       measuredPct,
       avgCorrWeighted,
       nodes,

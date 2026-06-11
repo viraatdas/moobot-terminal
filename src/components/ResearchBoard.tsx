@@ -44,6 +44,9 @@ interface Props {
   tabs: ResearchTab[];
   feed: FeedLine[];
   agentEngine: AgentEngine;
+  createLensRequest?: { id: number; type?: LensType } | null;
+  selectTabRequest?: { id: number; tabId: string } | null;
+  onActiveTabChange?: (tab: ResearchTab | null) => void;
   onTabsChanged: () => void;
 }
 
@@ -84,7 +87,15 @@ function shortcutDigit(e: KeyboardEvent): number | null {
   return null;
 }
 
-export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props) {
+export function ResearchBoard({
+  tabs,
+  feed,
+  agentEngine,
+  createLensRequest,
+  selectTabRequest,
+  onActiveTabChange,
+  onTabsChanged,
+}: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [findings, setFindings] = useState<{
     markdown: string;
@@ -93,9 +104,27 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
     lens: Record<string, any>;
   }>({ markdown: "", state: null, panels: [], lens: {} });
   const [creating, setCreating] = useState(false);
+  const [createType, setCreateType] = useState<LensType>("research");
 
   const [autoBusy, setAutoBusy] = useState(false);
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null;
+
+  useEffect(() => {
+    onActiveTabChange?.(active);
+  }, [active, onActiveTabChange]);
+
+  useEffect(() => {
+    if (!createLensRequest) return;
+    setCreateType(createLensRequest.type ?? "research");
+    setCreating(true);
+  }, [createLensRequest]);
+
+  useEffect(() => {
+    if (!selectTabRequest) return;
+    if (tabs.some((tab) => tab.id === selectTabRequest.tabId)) {
+      setActiveId(selectTabRequest.tabId);
+    }
+  }, [selectTabRequest, tabs]);
 
   const closeTab = useCallback(
     async (tab: ResearchTab, confirmClose = true) => {
@@ -144,6 +173,7 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
         return true;
       }
       if (command === "new-tab") {
+        setCreateType("research");
         setCreating(true);
         return true;
       }
@@ -331,7 +361,10 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
           </button>
         ))}
         <button
-          onClick={() => setCreating(true)}
+          onClick={() => {
+            setCreateType("research");
+            setCreating(true);
+          }}
           className="shrink-0 px-4 text-[16px] text-ink-faint hover:text-amber"
           title="New lens tab (⌘T)"
         >
@@ -363,6 +396,7 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
         <NewTabForm
           tabs={tabs}
           agentEngine={agentEngine}
+          initialType={createType}
           onDone={(created) => {
             setCreating(false);
             if (created) {
@@ -395,7 +429,10 @@ export function ResearchBoard({ tabs, feed, agentEngine, onTabsChanged }: Props)
               {autoBusy ? "Setting up…" : "✦ Auto-setup my cockpit"}
             </button>
             <button
-              onClick={() => setCreating(true)}
+              onClick={() => {
+                setCreateType("research");
+                setCreating(true);
+              }}
               className="rounded-sm border border-hairline px-4 py-1.5 text-[12px] font-medium text-ink-dim hover:border-hairline-2 hover:text-ink"
             >
               New lens
@@ -635,13 +672,15 @@ const LENS_ORDER: LensType[] = ["research", "pulse", "scout", "thesis", "exposur
 function NewTabForm({
   tabs,
   agentEngine,
+  initialType,
   onDone,
 }: {
   tabs: ResearchTab[];
   agentEngine: AgentEngine;
+  initialType: LensType;
   onDone: (createdId: string | null) => void;
 }) {
-  const [type, setType] = useState<LensType>("research");
+  const [type, setType] = useState<LensType>(initialType);
   const [topic, setTopic] = useState("");
   const [notes, setNotes] = useState("");
   const [interval, setIntervalMin] = useState(30);
@@ -652,6 +691,10 @@ function NewTabForm({
   useEffect(() => {
     ref.current?.focus();
   }, [type]);
+
+  useEffect(() => {
+    setType(initialType);
+  }, [initialType]);
 
   const meta = LENS_META[type];
   const topicLabel =

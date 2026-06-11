@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { client, fmtMoney, type TradeProposal } from "../lib/client";
 
 interface Props {
@@ -180,8 +180,16 @@ function OrderTicket({
   const [type, setType] = useState<"market" | "limit">("market");
   const [limit, setLimit] = useState("");
   const [review, setReview] = useState<unknown>(null);
+  const [reviewToken, setReviewToken] = useState<string | null>(null);
+  const [reviewExpiresAt, setReviewExpiresAt] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setReview(null);
+    setReviewToken(null);
+    setReviewExpiresAt(null);
+  }, [accountNumber, limit, qty, side, symbol, type]);
 
   function buildOrder() {
     return {
@@ -207,21 +215,41 @@ function OrderTicket({
     setMsg(null);
     try {
       const r = await client.request("trade.review", { order: buildOrder() });
-      setReview(r);
+      const envelope = r && typeof r === "object" ? (r as Record<string, unknown>) : null;
+      setReview(envelope && "review" in envelope ? envelope.review : r);
+      setReviewToken(
+        envelope && typeof envelope.reviewToken === "string" ? envelope.reviewToken : null,
+      );
+      setReviewExpiresAt(
+        envelope && typeof envelope.expiresAt === "string" ? envelope.expiresAt : null,
+      );
     } catch (err) {
       setMsg(String(err));
+      setReviewToken(null);
+      setReviewExpiresAt(null);
     }
     setBusy(false);
   }
 
   async function doPlace() {
     if (!valid || busy) return;
+    if (!reviewToken) {
+      setMsg("Review this exact order first.");
+      return;
+    }
+    const order = buildOrder();
+    const desc = `${side.toUpperCase()} ${qty} ${symbol.trim().toUpperCase()} ${
+      type === "limit" ? `at limit ${limit}` : "at market"
+    }`;
+    if (!confirm(`Place real order?\n\n${desc}\nAccount ${accountNumber}`)) return;
     setBusy(true);
     setMsg(null);
     try {
-      await client.request("trade.place", { order: buildOrder(), confirmed: true });
+      await client.request("trade.place", { order, confirmed: true, reviewToken });
       setMsg(`Order placed: ${side.toUpperCase()} ${qty} ${symbol.toUpperCase()}`);
       setReview(null);
+      setReviewToken(null);
+      setReviewExpiresAt(null);
       setSymbol("");
       setQty("");
       setLimit("");
@@ -308,6 +336,11 @@ function OrderTicket({
       {review != null && (
         <div className="font-data mt-2 max-h-24 overflow-y-auto rounded-sm bg-bg p-2 text-[10px] leading-relaxed whitespace-pre-wrap text-ink-dim select-text">
           {typeof review === "string" ? review : JSON.stringify(review, null, 1)}
+          {reviewExpiresAt && (
+            <div className="mt-1 border-t border-hairline pt-1 text-ink-faint">
+              Review expires {new Date(reviewExpiresAt).toLocaleTimeString()}
+            </div>
+          )}
         </div>
       )}
       {msg && <div className="mt-2 text-[11px] text-amber select-text">{msg}</div>}
@@ -321,9 +354,9 @@ function OrderTicket({
           Review
         </button>
         <button
-          disabled={!valid || busy || review == null}
+          disabled={!valid || busy || !reviewToken}
           onClick={() => void doPlace()}
-          title={review == null ? "Review first" : ""}
+          title={!reviewToken ? "Review first" : ""}
           className="flex-1 rounded-sm border border-amber/40 bg-amber-dim py-1.5 text-[11px] font-semibold text-amber uppercase hover:bg-amber/25 disabled:opacity-40"
         >
           Place

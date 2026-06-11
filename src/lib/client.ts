@@ -64,6 +64,13 @@ export interface ResearchEvent {
   text?: string;
 }
 
+export interface FeedLine {
+  id: number;
+  tabId: string;
+  text: string;
+  at: number;
+}
+
 export interface Position {
   kind: "equity" | "option" | "crypto";
   symbol: string;
@@ -103,6 +110,64 @@ export interface AccountSnapshot {
   crypto: Position[];
 }
 
+export interface MarketCandle {
+  time: string;
+  date?: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number;
+  volume: number | null;
+}
+
+export interface MarketHistory {
+  symbol: string;
+  yahooSymbol?: string | null;
+  range: string;
+  interval: string;
+  source: "yahoo" | "cache" | "unavailable" | string | null;
+  stale?: boolean;
+  savedAt?: number | null;
+  updatedAt?: string;
+  candles?: MarketCandle[];
+  points?: MarketCandle[];
+  warning?: string | null;
+}
+
+export type MarketHistoryPoint = MarketCandle;
+
+export interface MarketEvent {
+  id: string;
+  type: "filing" | "news" | "expiry" | "agent" | "risk" | "option_expiration" | "option_near_expiry";
+  severity: "info" | "low" | "medium" | "high";
+  title: string;
+  detail: string;
+  description?: string;
+  symbols: string[];
+  symbol?: string;
+  at: string;
+  date?: string;
+  source?: string;
+  url?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface RiskSummary {
+  updatedAt: string;
+  grossExposure: number;
+  netDeltaDollars: number;
+  cash: number;
+  topExposures: Array<{
+    symbol: string;
+    value: number;
+    deltaDollars: number;
+    share: number;
+    kind: string;
+  }>;
+  scenarios: Array<{ label: string; move: number; pnl: number }>;
+  warnings: Array<{ title: string; detail: string; severity: "info" | "low" | "medium" | "high" }>;
+}
+
 export interface OptionContract {
   symbol: string;
   expirationDate: string;
@@ -118,6 +183,91 @@ export interface OptionContract {
   iv: number | null;
   openInterest: number | null;
   volume: number | null;
+}
+
+export interface WatchlistItem {
+  symbol: string;
+  label: string | null;
+  note: string;
+  addedAt: string;
+  updatedAt: string;
+}
+
+export interface MarketEventsResponse {
+  updatedAt: string;
+  accountNumber: string;
+  windowDays: number;
+  nearExpiryDays: number;
+  events: MarketEvent[];
+  placeholders: Array<{
+    source: "filings" | "news";
+    status: "unavailable";
+    title: string;
+    description: string;
+    symbols: string[];
+  }>;
+}
+
+export interface AccountRiskSummary extends RiskSummary {
+  updatedAt: string;
+  accountNumber: string;
+  portfolio: Pick<PortfolioSnapshot, "equity" | "cash" | "invested" | "pnl" | "pnlPercent" | "asOf">;
+  exposure: {
+    grossPositionValue: number;
+    equityValue: number;
+    optionValue: number;
+    cryptoValue: number;
+    grossDeltaDollars: number;
+    netDeltaDollars: number;
+    cashPct: number;
+    investedPct: number;
+    optionsPct: number;
+    betaSpy90Weighted: number | null;
+  };
+  flags: Array<{
+    level: "info" | "medium" | "high";
+    code: string;
+    message: string;
+    details: Record<string, unknown>;
+  }>;
+  concentration?: {
+    largestWeight: number;
+    herfindahl: number;
+    topPositions: Array<{
+      symbol: string;
+      kind: Position["kind"];
+      title: string | null;
+      quantity: number;
+      value: number;
+      weight: number;
+      unrealizedPnl: number;
+      daysToExpiry: number | null;
+    }>;
+  };
+  options?: {
+    count: number;
+    value: number;
+    nearExpiryCount: number;
+    nearExpiryDays: number;
+    earliestExpiration: string | null;
+    averageIv: number | null;
+  };
+  correlation?: {
+    method: string;
+    measuredPct: number;
+    avgCorrWeighted: number;
+    grossExposure: number;
+    clusters: Array<{ label: string; symbols: string[]; value: number; share: number; avgCorr: number }>;
+    topEdges: Array<{
+      a: string;
+      b: string;
+      corr: number;
+      source: "measured" | "estimated";
+      observations: number;
+      riskContribution: number;
+    }>;
+    insight: string;
+  };
 }
 
 type EventHandler = (event: string, payload: any) => void;

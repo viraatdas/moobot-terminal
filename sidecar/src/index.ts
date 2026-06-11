@@ -9,12 +9,20 @@ import { PluginManager } from "./plugins.ts";
 import { RobinhoodMcpData } from "./rh-mcp-data.ts";
 import { CorrelationEngine } from "./correlation.ts";
 import { AlertManager, notify, sendEmailNotification } from "./alerts.ts";
+import { MarketData } from "./market-data.ts";
+import { MarketEventsService } from "./market-events.ts";
+import { RiskSummaryService } from "./risk.ts";
+import { WatchlistStore } from "./watchlist.ts";
 
 ensureDirs();
 
 const rh = new RobinhoodGateway();
 const rhData = new RobinhoodMcpData(rh);
 const correlation = new CorrelationEngine(rhData);
+const marketData = new MarketData();
+const marketEvents = new MarketEventsService(rhData);
+const risk = new RiskSummaryService(rhData, correlation);
+const watchlist = new WatchlistStore();
 const plugins = new PluginManager();
 const research = new ResearchManager(plugins, async (tab) => {
   if (tab.type === "lattice") return { "lattice.json": await correlation.lattice() };
@@ -24,6 +32,54 @@ const proposals = new ProposalQueue(rh, research);
 const alerts = new AlertManager(rh);
 
 let wss: WebSocketServer | null = null;
+
+const TRADE_REVIEW_TTL_MS = 5 * 60 * 1000;
+const reviewedOrders = new Map<string, { orderKey: string; expiresAt: number }>();
+
+function sortedJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, val]) => [key, sortedJson(val)]),
+  );
+}
+
+function reviewedOrderKey(order: unknown): string {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(sortedJson(order ?? {})))
+    .digest("hex");
+}
+
+function pruneReviewedOrders(now = Date.now()) {
+  for (const [token, review] of reviewedOrders) {
+    if (review.expiresAt <= now) reviewedOrders.delete(token);
+  }
+}
+
+function rememberReviewedOrder(order: unknown): { reviewToken: string; expiresAt: string } {
+  const now = Date.now();
+  pruneReviewedOrders(now);
+  const reviewToken = crypto.randomUUID();
+  const expiresAt = now + TRADE_REVIEW_TTL_MS;
+  reviewedOrders.set(reviewToken, { orderKey: reviewedOrderKey(order), expiresAt });
+  return { reviewToken, expiresAt: new Date(expiresAt).toISOString() };
+}
+
+function consumeReviewedOrder(order: unknown, reviewToken: unknown) {
+  if (typeof reviewToken !== "string" || !reviewToken) {
+    throw new Error("Review this exact order before placing it");
+  }
+  pruneReviewedOrders();
+  const review = reviewedOrders.get(reviewToken);
+  if (!review) throw new Error("Order review expired - review the order again");
+  reviewedOrders.delete(reviewToken);
+  if (review.orderKey !== reviewedOrderKey(order)) {
+    throw new Error("Order changed after review - review the order again");
+  }
+}
 
 /**
  * Local HTTP API for research agents (separate claude processes that can't use
@@ -176,6 +232,19 @@ const handlers: Record<string, Handler> = {
   "account.lattice": async ({ accountNumber }) => {
     return correlation.lattice(accountNumber);
   },
+  "account.risk": async ({ accountNumber }) => {
+    return risk.summary(accountNumber);
+  },
+  "market.history": async ({ symbol, range, interval }) => {
+    return marketData.history(symbol, { range, interval });
+  },
+  "market.events": async ({ accountNumber, windowDays, nearExpiryDays, symbols }) => {
+    return marketEvents.events(accountNumber, { windowDays, nearExpiryDays, symbols });
+  },
+  "watchlist.list": () => watchlist.list().map((item) => item.symbol),
+  "watchlist.add": ({ symbol, label, name, note }) =>
+    watchlist.add(symbol, { label: label ?? name, note }).items.map((item) => item.symbol),
+  "watchlist.remove": ({ symbol }) => watchlist.remove(symbol).items.map((item) => item.symbol),
   "options.chain": async ({ symbol, expiration }) => {
     if (!expiration) {
       const exps = await rhData.optionExpirations(symbol);
@@ -231,9 +300,13 @@ const handlers: Record<string, Handler> = {
   },
   "research.findings": ({ id }) => research.findings(id),
   // Manual order ticket - human-initiated from the UI. Review first, then place.
-  "trade.review": ({ order }) => rh.callTool("review_equity_order", order),
-  "trade.place": async ({ order, confirmed }) => {
+  "trade.review": async ({ order }) => {
+    const review = await rh.callTool("review_equity_order", order);
+    return { review, ...rememberReviewedOrder(order) };
+  },
+  "trade.place": async ({ order, confirmed, reviewToken }) => {
     if (confirmed !== true) throw new Error("Order not confirmed by user");
+    consumeReviewedOrder(order, reviewToken);
     return rh.callTool("place_equity_order", {
       ...order,
       ref_id: crypto.randomUUID(),

@@ -12,7 +12,13 @@ interface Alert {
   triggeredAt: string | null;
 }
 
-export function AlertsModal({ onClose }: { onClose: () => void }) {
+export function AlertsModal({
+  initialSymbol,
+  onClose,
+}: {
+  initialSymbol?: string | null;
+  onClose: () => void;
+}) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [symbol, setSymbol] = useState("");
   const [op, setOp] = useState<"above" | "below">("above");
@@ -32,6 +38,11 @@ export function AlertsModal({ onClose }: { onClose: () => void }) {
     });
     return off;
   }, []);
+
+  useEffect(() => {
+    const clean = initialSymbol?.replace(/^\$/, "").trim().toUpperCase();
+    if (clean) setSymbol(clean);
+  }, [initialSymbol]);
 
   async function add() {
     if (!symbol.trim() || !(Number(price) > 0)) return;

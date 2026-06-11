@@ -516,6 +516,14 @@ function maybeNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function nodeExposure(node: { deltaDollars?: unknown; value?: unknown }): number {
+  return maybeNumber(node.deltaDollars) ?? maybeNumber(node.value) ?? 0;
+}
+
+function nodeExposureMagnitude(node: { deltaDollars?: unknown; value?: unknown }): number {
+  return Math.abs(nodeExposure(node));
+}
+
 function corrForWindow(edge: GEdge, window: LatticeWindow): number {
   const value =
     window === "30d" ? edge.corr30 : window === "252d" ? edge.corr252 : edge.corr90;
@@ -528,7 +536,7 @@ function normalizeLatticeNodes(rawNodes: any[]): GNode[] {
     const id = cleanSymbol(raw?.symbol ?? raw?.id);
     if (!id) continue;
     const value = Number(raw?.value) || 0;
-    const deltaDollars = Number(raw?.deltaDollars) || value;
+    const deltaDollars = maybeNumber(raw?.deltaDollars) ?? value;
     const weight = Number(raw?.weight) || 0;
     const existing = byId.get(id);
     if (existing) {
@@ -549,12 +557,12 @@ function normalizeLatticeNodes(rawNodes: any[]): GNode[] {
     }
   }
   const rows = [...byId.values()].sort(
-    (a, b) => Math.abs(b.deltaDollars || b.value) - Math.abs(a.deltaDollars || a.value),
+    (a, b) => nodeExposureMagnitude(b) - nodeExposureMagnitude(a),
   );
   const totalWeight = rows.reduce((sum, n) => sum + n.weight, 0);
-  const gross = rows.reduce((sum, n) => sum + Math.abs(n.deltaDollars || n.value), 0) || 1;
+  const gross = rows.reduce((sum, n) => sum + nodeExposureMagnitude(n), 0) || 1;
   return rows
-    .map((n) => ({ ...n, weight: totalWeight > 0 ? n.weight : Math.abs(n.deltaDollars || n.value) / gross }))
+    .map((n) => ({ ...n, weight: totalWeight > 0 ? n.weight : nodeExposureMagnitude(n) / gross }))
     .slice(0, 14);
 }
 
@@ -764,7 +772,7 @@ function LatticeGraph({
   const [hover, setHover] = useState<string | null>(null);
 
   const nodeKey = nodes.map((n) => `${n.id}:${n.kind}:${Math.round(n.value)}`).join("|");
-  const maxVal = Math.max(1, ...nodes.map((n) => Math.abs(n.deltaDollars || n.value) || 0));
+  const maxVal = Math.max(1, ...nodes.map((n) => nodeExposureMagnitude(n)));
   const radiusOf = (v: number) => 9 + 24 * Math.sqrt((Math.abs(v) || 0) / maxVal);
 
   const gEdges = useMemo<GEdge[]>(() => {
@@ -810,7 +818,7 @@ function LatticeGraph({
         y: cy + Math.sin(ang) * rr,
         vx: 0,
         vy: 0,
-        r: radiusOf(n.deltaDollars || n.value),
+        r: radiusOf(nodeExposure(n)),
       };
     });
     const byId = new Map(sim.map((s) => [s.id, s]));
@@ -943,7 +951,7 @@ function LatticeGraph({
         {nodes.map((n) => {
           const p = pos[n.id];
           if (!p) return null;
-          const r = radiusOf(n.deltaDollars || n.value);
+          const r = radiusOf(nodeExposure(n));
           const dim = !!hover && hover !== n.id && !hoverNeighbors.includes(n.id);
           const col = kindColor(n.kind);
           return (
