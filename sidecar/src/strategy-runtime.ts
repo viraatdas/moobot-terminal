@@ -129,7 +129,16 @@ export class StrategyRuntime {
           const i = bars.length - 1;
           const holding = held.get(symbol);
           const key = `${tab.id}:${symbol}`;
-          const side: "buy" | "sell" = holding ? "sell" : "buy";
+          // You ENTER when flat and EXIT when holding (a short position is held with a
+          // negative quantity, so it still counts as "holding"). The BROKER side then
+          // depends on BOTH whether this is an entry/exit AND the strategy direction:
+          // long entry = buy, long exit = sell; short entry = sell-to-open, short exit
+          // = buy-to-cover. Deriving side from held-state alone files backwards orders
+          // for short strategies — so all guards below key off isEntry, not side.
+          const isEntry = !holding;
+          const side: "buy" | "sell" = isEntry
+            ? spec.direction === "short" ? "sell" : "buy"
+            : spec.direction === "short" ? "buy" : "sell";
           const sigKey = `${key}:${side}`;
 
           // Track best price for live trailing-stop approximation.
@@ -165,20 +174,19 @@ export class StrategyRuntime {
 
           // Block NEW entries when real-money rules are unverified/diverged; exits
           // (closing a held position) are never blocked.
-          if (side === "buy" && !entriesAllowed) continue;
+          if (isEntry && !entriesAllowed) continue;
 
           // Equity-% sizing needs a real account value. If the snapshot failed this
           // tick we don't know it, so skip the entry rather than size off a guess.
-          if (side === "buy" && spec.sizing.type === "equityPct" && (!snapshotOk || accountEquity <= 0)) {
+          if (isEntry && spec.sizing.type === "equityPct" && (!snapshotOk || accountEquity <= 0)) {
             this.deps.onActivity?.(tab.id, `skipped ${symbol} entry — account equity unknown this tick`);
             continue;
           }
 
           const price = bars[i].close;
-          const reason =
-            side === "buy"
-              ? `entry rule met @ ${price.toFixed(2)}`
-              : `exit rule met @ ${price.toFixed(2)}`;
+          const reason = isEntry
+            ? `entry rule met @ ${price.toFixed(2)}`
+            : `exit rule met @ ${price.toFixed(2)}`;
 
           // Live LLM gate — the only place model judgment enters.
           if (spec.llmGate && spec.llmGate.mode === "live-only" && spec.llmGate.prompt.trim()) {
@@ -191,8 +199,8 @@ export class StrategyRuntime {
           }
 
           const quantity =
-            side === "sell" && holding
-              ? Math.abs(holding.quantity)
+            !isEntry && holding
+              ? Math.abs(holding.quantity) // exit: close the full held position (short qty is negative)
               : sizeOrder(spec.sizing, accountEquity, price);
           if (quantity <= 0) continue;
 

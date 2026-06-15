@@ -99,3 +99,11 @@ test("approve rejects a non-positive override quantity, leaving the proposal pen
   await assert.rejects(() => q.approve("badov", "ACCT-1", { quantity: 0 }), /bad override quantity/);
   assert.equal((q.list()[0] as any).status, "pending", "a bad override must not consume the proposal");
 });
+
+test("an interrupted 'approving' row recovers as failed-needs-reconcile, never re-approvable", () => {
+  seed([row({ id: "stuck", status: "approving" })]);
+  const q = new ProposalQueue(rhThatThrows, researchStub, { isPaper: () => true });
+  const p = q.list()[0] as any;
+  assert.equal(p.status, "failed", "a crash mid-placement must not leave the row re-approvable as pending");
+  assert.match(p.error, /verify with the broker/i);
+});

@@ -29,6 +29,9 @@ export interface Position {
   averagePrice: number;
   currentPrice?: number;
   markPrice?: number | null;
+  /** This position's market value at the previous close (qty × prevClose × mult),
+   * or null when no previous close is available — used for the real "today" P&L. */
+  previousValue?: number | null;
   value: number;
   unrealizedPnl: number;
   unrealizedPnlPercent: number;
@@ -190,6 +193,39 @@ function quotePrice(row: any): number | null {
   );
 }
 
+function quotePreviousClose(row: any): number | null {
+  const q = row?.quote ?? row;
+  return toNullableNumber(
+    q?.adjusted_previous_close ?? q?.previous_close ?? q?.previous_close_price ?? q?.adjusted_previous_close_price,
+  );
+}
+
+// Day P&L from each held position's move off ITS OWN previous close (current value
+// vs value-at-yesterday's-close). This is the authoritative "today" number when the
+// broker portfolio endpoint reports no previous-close field (Robinhood's get_portfolio
+// does not) — far better than the app's first-intraday-snapshot baseline, which
+// misses the entire move that happened before the terminal was opened.
+function positionDayPerformance(
+  positions: Position[],
+  equity: number,
+  nowMs: number,
+): PortfolioDayPerformance | null {
+  let dayPnl = 0;
+  let measured = 0;
+  for (const p of positions) {
+    if (p.previousValue == null || !Number.isFinite(p.previousValue)) continue;
+    dayPnl += p.value - p.previousValue;
+    measured += 1;
+  }
+  if (measured === 0) return null;
+  return {
+    dayPnl,
+    dayPnlPercent: pctFromBaseline(dayPnl, equity - dayPnl),
+    dayStartEquity: equity - dayPnl,
+    dayStartAt: startOfLocalDay(nowMs),
+  };
+}
+
 export class RobinhoodMcpData {
   private rh: RobinhoodGateway;
   private history: PortfolioHistoryService | null;
@@ -268,8 +304,13 @@ export class RobinhoodMcpData {
         asOf: nowMs,
       });
     }
+    // Prefer the broker's own previous-close if it ever provides one; else compute
+    // the real day move from each position's previous close (Robinhood's get_portfolio
+    // returns no previous-close field, so this is the live path); only as a last
+    // resort fall back to the app's first-intraday-snapshot baseline.
     const dayPerf =
       brokerDayPerformance(portfolioRaw, equity, nowMs) ??
+      positionDayPerformance(positions, equity, nowMs) ??
       this.history?.dayPerformance(acct, equity, nowMs) ??
       null;
     return {
@@ -340,7 +381,9 @@ export class RobinhoodMcpData {
       const symbol = String(p?.symbol ?? "").toUpperCase();
       const quantity = toNumber(p?.quantity);
       const averagePrice = toNumber(p?.average_buy_price);
-      const price = quotePrice(quotes.get(symbol)) ?? averagePrice;
+      const quoteRow = quotes.get(symbol);
+      const price = quotePrice(quoteRow) ?? averagePrice;
+      const previousClose = quotePreviousClose(quoteRow);
       const value = quantity * price;
       const cost = quantity * averagePrice;
       const unrealizedPnl = value - cost;
@@ -350,6 +393,7 @@ export class RobinhoodMcpData {
         quantity,
         averagePrice,
         currentPrice: price,
+        previousValue: previousClose != null ? quantity * previousClose : null,
         value,
         unrealizedPnl,
         unrealizedPnlPercent: cost > 0 ? (unrealizedPnl / cost) * 100 : 0,
@@ -393,6 +437,7 @@ export class RobinhoodMcpData {
       const averagePrice = toNumber(p?.average_price);
       const multiplier = toNumber(p?.trade_value_multiplier ?? 100, 100);
       const markPrice = toNullableNumber(q?.mark_price ?? q?.adjusted_mark_price);
+      const previousClose = toNullableNumber(q?.previous_close_price ?? q?.previous_close ?? q?.adjusted_previous_close);
       const cost = averagePrice * quantity;
       const value = markPrice !== null ? markPrice * quantity * multiplier : cost;
       const unrealizedPnl = value - cost;
@@ -409,6 +454,7 @@ export class RobinhoodMcpData {
         quantity,
         averagePrice,
         markPrice,
+        previousValue: previousClose != null ? previousClose * quantity * multiplier : null,
         value,
         unrealizedPnl,
         unrealizedPnlPercent: cost > 0 ? (unrealizedPnl / cost) * 100 : 0,

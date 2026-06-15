@@ -215,14 +215,21 @@ export class ProposalQueue {
       entryPrice: num(p.entryPrice),
       entryAt: typeof p.entryAt === "string" ? p.entryAt : null,
       strategySpecHash: typeof p.strategySpecHash === "string" ? p.strategySpecHash : null,
-      // A proposal that was mid-approval when the process died reverts to pending;
-      // no order was confirmed placed (execution is only set after a fill). This is
-      // the recovery counterpart of approve()'s transient "approving" lock.
+      // A row left "approving" on disk means the process died MID-placement: the order
+      // may or may not have reached the broker. Do NOT silently revert to pending
+      // (re-approval could place a duplicate) — mark it failed and force the human to
+      // reconcile with the broker before re-filing. This is the recovery counterpart
+      // of approve()'s now-persisted "approving" lock.
       createdAt: typeof p.createdAt === "string" ? p.createdAt : new Date().toISOString(),
-      status: status === "approving" ? "pending" : status,
+      status: status === "approving" ? "failed" : status,
       result: p.result ?? null,
       execution: p.execution ?? null,
-      error: typeof p.error === "string" ? p.error : null,
+      error:
+        status === "approving"
+          ? "Interrupted during order placement — verify with the broker before re-filing (the order may or may not have been placed)."
+          : typeof p.error === "string"
+            ? p.error
+            : null,
     };
   }
 
@@ -343,6 +350,10 @@ export class ProposalQueue {
     // synchronously BEFORE the first await so a second concurrent approve() bails —
     // no duplicate order placement.
     this.transition(p, "approving");
+    // Persist the in-flight lock so a crash mid-placement is recoverable: the row is
+    // left "approving" on disk and normalizeLoaded marks it failed-needs-reconcile on
+    // restart, rather than re-approvable (which could place a DUPLICATE real order).
+    this.persist();
 
     // Reference fill price: the limit for limit orders, else a live quote.
     let fillPrice = effOrderType === "limit" ? effLimit : null;
