@@ -11,6 +11,8 @@ import {
   CODEX_MODEL,
 } from "./config.ts";
 import type { PluginManager } from "./plugins.ts";
+import type { VerificationReport } from "./verify.ts";
+import { writeJsonFileAtomic, readJsonl, appendJsonl } from "./json-store.ts";
 import { LENSES, LENS_OUTPUT, type AgentEngine, type LensTab, type LensType } from "./lenses.ts";
 
 // Back-compat alias: tabs are now typed lenses.
@@ -62,6 +64,10 @@ export class ResearchManager {
         const tab = JSON.parse(
           fs.readFileSync(this.configPath(entry), "utf8"),
         ) as ResearchTab;
+        // A foreign/corrupt dir with no id (or a missing createdAt) would otherwise
+        // crash list()'s createdAt.localeCompare — drop/repair it on load.
+        if (!tab || typeof tab.id !== "string" || !tab.id) continue;
+        if (typeof tab.createdAt !== "string") tab.createdAt = new Date().toISOString();
         // Migrate pre-lens tabs.
         if (!tab.type) tab.type = "research";
         if (!tab.engine) tab.engine = "claude";
@@ -230,7 +236,7 @@ export class ResearchManager {
     this.timers.set(tab.id, timer);
   }
 
-  async run(id: string): Promise<void> {
+  async run(id: string, runReason?: string): Promise<void> {
     const tab = this.tabs.get(id);
     if (!tab) throw new Error(`No research tab ${id}`);
     if (this.running.has(id) || this.deterministicRunning.has(id)) return; // already running
@@ -249,10 +255,13 @@ export class ResearchManager {
       ? def.firstPrompt(tab, refContext)
       : def.loopPrompt(tab, refContext);
     // Plugins (sources) only apply to research-style lenses that browse.
-    const prompt =
+    let prompt =
       tab.type === "research" || tab.type === "trade" || tab.type === "thesis"
         ? base + this.plugins.promptFragment()
         : base;
+    if (runReason) {
+      prompt += `\n\nWAKE TRIGGER: ${runReason}. This run was triggered by that event, not the timer — lead with what it means for this thesis/book and whether it changes any proposal.`;
+    }
     const allowedTools = [
       ...new Set([
         ...RESEARCH_ALLOWED_TOOLS,
@@ -265,7 +274,9 @@ export class ResearchManager {
     this.onEvent?.({
       tabId: id,
       kind: "activity",
-      text: `starting ${this.engineName(tab.engine)} agent…`,
+      text: runReason
+        ? `woke on ${runReason} — starting ${this.engineName(tab.engine)} agent…`
+        : `starting ${this.engineName(tab.engine)} agent…`,
     });
 
     const child = spawn(spec.bin, spec.args, {
@@ -537,6 +548,89 @@ RUNNER SAFETY:
   /** Directory a tab's agent writes proposal JSON files into. */
   proposalsDir(id: string) {
     return path.join(this.tabDir(id), "proposals");
+  }
+
+  /** The compiled rules a strategy lens authored, or null if not written yet. */
+  readStrategy(id: string): unknown | null {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(this.tabDir(id), "strategy.json"), "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Persist edited rules back to the strategy lens's workspace. */
+  writeStrategy(id: string, spec: unknown): void {
+    writeJsonFileAtomic(path.join(this.tabDir(id), "strategy.json"), spec);
+  }
+
+  /** Whether a strategy lens is currently flagged live. The live flag is a
+   * money-path bit whose "only setLive may set it true" invariant the service
+   * owns — callers ask here instead of reaching into raw strategy JSON. */
+  getLive(id: string): boolean {
+    return (this.readStrategy(id) as Record<string, unknown> | null)?.live === true;
+  }
+
+  /** Force every live strategy lens back to not-live (e.g. on a paper→real switch).
+   * Real capital must re-clear the go-live gate explicitly; a live flag validated
+   * only for simulated fills must never carry into real money. */
+  standDownAllLive(reason: string): void {
+    for (const tab of this.list()) {
+      if (tab.type !== "strategy") continue;
+      const raw = this.readStrategy(tab.id) as Record<string, unknown> | null;
+      if (raw && raw.live === true) {
+        this.writeStrategy(tab.id, { ...raw, live: false });
+        this.onEvent?.({ tabId: tab.id, kind: "activity", text: reason });
+      }
+    }
+  }
+
+  /** The human-readable strategy description the agent maintains, if any. */
+  readStrategyMarkdown(id: string): string | null {
+    try {
+      return fs.readFileSync(path.join(this.tabDir(id), "strategy.md"), "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  /** The last verification verdict for a strategy lens, or null if never run. The
+   * on-disk JSON is the persisted VerificationReport (asserted, not re-validated),
+   * so the gate accesses are typed instead of cast at every call site. */
+  readVerification(id: string): VerificationReport | null {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(this.tabDir(id), "verification.json"), "utf8")) as VerificationReport;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Persist a verification verdict; also append the spec hash to the trials log
+   * so the multiple-testing penalty can count distinct authored variants. */
+  writeVerification(id: string, report: VerificationReport): void {
+    const dir = this.tabDir(id);
+    fs.mkdirSync(dir, { recursive: true });
+    writeJsonFileAtomic(path.join(dir, "verification.json"), report);
+    if (report.specHash) {
+      try {
+        appendJsonl(path.join(dir, "verification-history.jsonl"), { specHash: report.specHash, at: new Date().toISOString() });
+      } catch {
+        /* best effort */
+      }
+    }
+  }
+
+  /** Count of DISTINCT spec hashes ever verified for this lens — a lower bound on
+   * the number of variants tried (the agent overwrites strategy.json each loop). */
+  verificationTrials(id: string): number {
+    const { records } = readJsonl<{ specHash?: string }>(
+      path.join(this.tabDir(id), "verification-history.jsonl"),
+    );
+    const hashes = new Set<string>();
+    for (const rec of records) {
+      if (rec?.specHash) hashes.add(rec.specHash);
+    }
+    return hashes.size;
   }
 
   stopAll() {

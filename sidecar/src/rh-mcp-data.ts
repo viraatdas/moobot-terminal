@@ -1,4 +1,5 @@
 import type { RobinhoodGateway } from "./robinhood.ts";
+import { PortfolioHistoryService, type PortfolioDayPerformance } from "./portfolio-history.ts";
 
 export interface PortfolioSnapshot {
   accountNumber: string;
@@ -8,6 +9,10 @@ export interface PortfolioSnapshot {
   pnl: number;
   pnlPercent: number;
   pnlLabel: string;
+  dayPnl?: number;
+  dayPnlPercent?: number;
+  dayStartEquity?: number;
+  dayStartAt?: number;
   previousClose: number;
   asOf: number;
 }
@@ -59,6 +64,91 @@ function toNullableNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function pickNumber(row: unknown, keys: string[]): number | null {
+  if (!row || typeof row !== "object") return null;
+  for (const key of keys) {
+    let value: unknown = row;
+    for (const part of key.split(".")) {
+      if (!value || typeof value !== "object") {
+        value = undefined;
+        break;
+      }
+      value = (value as Record<string, unknown>)[part];
+    }
+    const n = toNullableNumber(value);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+function startOfLocalDay(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function pctFromBaseline(change: number, baseline: number): number {
+  return baseline > 0 ? (change / baseline) * 100 : 0;
+}
+
+function normalizePct(value: number | null): number | null {
+  if (value === null) return null;
+  return Math.abs(value) <= 1 ? value * 100 : value;
+}
+
+function brokerDayPerformance(
+  portfolioRaw: unknown,
+  equity: number,
+  nowMs: number,
+): PortfolioDayPerformance | null {
+  const previousClose = pickNumber(portfolioRaw, [
+    "equity_previous_close",
+    "adjusted_equity_previous_close",
+    "previous_close_equity",
+    "previous_equity",
+    "portfolio_previous_close",
+    "total_value_previous_close",
+    "previous_total_value",
+    "previous_close",
+  ]);
+  if (previousClose !== null && previousClose > 0) {
+    const dayPnl = equity - previousClose;
+    return {
+      dayPnl,
+      dayPnlPercent: pctFromBaseline(dayPnl, previousClose),
+      dayStartEquity: previousClose,
+      dayStartAt: startOfLocalDay(nowMs),
+    };
+  }
+
+  const dayPnl = pickNumber(portfolioRaw, [
+    "day_pnl",
+    "day_pnl_amount",
+    "today_pnl",
+    "todays_pnl",
+    "today_profit_loss",
+    "todays_return",
+    "todays_return_amount",
+    "intraday_profit_loss",
+  ]);
+  if (dayPnl === null) return null;
+  const baseline = equity - dayPnl;
+  const explicitPct = normalizePct(
+    pickNumber(portfolioRaw, [
+      "day_pnl_percent",
+      "today_pnl_percent",
+      "todays_return_percent",
+      "intraday_profit_loss_percent",
+    ]),
+  );
+  return {
+    dayPnl,
+    dayPnlPercent: explicitPct ?? pctFromBaseline(dayPnl, baseline),
+    dayStartEquity: baseline,
+    dayStartAt: startOfLocalDay(nowMs),
+  };
+}
+
 function rows(payload: any, key: string): any[] {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.[key])) return payload[key];
@@ -102,9 +192,11 @@ function quotePrice(row: any): number | null {
 
 export class RobinhoodMcpData {
   private rh: RobinhoodGateway;
+  private history: PortfolioHistoryService | null;
 
-  constructor(rh: RobinhoodGateway) {
+  constructor(rh: RobinhoodGateway, history?: PortfolioHistoryService) {
     this.rh = rh;
+    this.history = history ?? null;
   }
 
   private async allPages(tool: string, args: Record<string, unknown>, key: string): Promise<any[]> {
@@ -150,6 +242,7 @@ export class RobinhoodMcpData {
     const pnl = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
     const costBasis = positionValue - pnl;
     const equity = totalValue || cash + positionValue;
+    const nowMs = Date.now();
     const cryptoValue = toNumber((portfolioRaw as any)?.crypto_value);
     const crypto: Position[] =
       cryptoValue > 0
@@ -166,6 +259,19 @@ export class RobinhoodMcpData {
             },
           ]
         : [];
+    if (this.history) {
+      this.history.record(acct, {
+        time: nowMs,
+        equity,
+        cash,
+        invested: Math.max(0, equity - cash),
+        asOf: nowMs,
+      });
+    }
+    const dayPerf =
+      brokerDayPerformance(portfolioRaw, equity, nowMs) ??
+      this.history?.dayPerformance(acct, equity, nowMs) ??
+      null;
     return {
       accountNumber: acct,
       portfolio: {
@@ -176,13 +282,42 @@ export class RobinhoodMcpData {
         pnl,
         pnlPercent: costBasis > 0 ? (pnl / costBasis) * 100 : 0,
         pnlLabel: "unrealized",
-        previousClose: equity - pnl,
-        asOf: Math.floor(Date.now() / 1000),
+        previousClose: dayPerf?.dayStartEquity ?? equity - pnl,
+        ...(dayPerf
+          ? {
+              dayPnl: dayPerf.dayPnl,
+              dayPnlPercent: dayPerf.dayPnlPercent,
+              dayStartEquity: dayPerf.dayStartEquity,
+              dayStartAt: dayPerf.dayStartAt,
+            }
+          : {}),
+        asOf: nowMs,
       },
       equities,
       options,
       crypto,
     };
+  }
+
+  /** Latest reference price per symbol. Symbols with no quote are omitted. */
+  async quotes(symbols: string[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const clean = [...new Set(symbols.map((s) => String(s ?? "").toUpperCase()).filter(Boolean))];
+    for (const batch of chunk(clean, 20)) {
+      let payload: unknown;
+      try {
+        payload = await this.rh.callTool("get_equity_quotes", { symbols: batch });
+      } catch {
+        continue;
+      }
+      for (const row of rows(payload, "results")) {
+        const q = (row as any)?.quote ?? row;
+        const symbol = String(q?.symbol ?? "").toUpperCase();
+        const price = quotePrice(row);
+        if (symbol && price !== null) out.set(symbol, price);
+      }
+    }
+    return out;
   }
 
   async equityPositions(accountNumber: string): Promise<Position[]> {

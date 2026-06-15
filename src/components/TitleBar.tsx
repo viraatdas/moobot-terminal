@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, Bot, ChevronDown, ChevronUp, Code2 } from "lucide-react";
+import { Bell, Bot, ChevronDown, ChevronUp, Code2, FlaskConical, Trophy, Zap } from "lucide-react";
 import { fmtMoney, type AgentEngine } from "../lib/client";
 import { MarketClock } from "./MarketClock";
 
@@ -17,6 +17,11 @@ interface Props {
   cloud: boolean;
   agentEngine: AgentEngine;
   onAgentEngineChange: (engine: AgentEngine) => void;
+  paperMode: boolean;
+  onTogglePaper: () => void;
+  onOpenTrackRecord: () => void;
+  eventTriggers: boolean;
+  onToggleEventTriggers: () => void;
 }
 
 function accountNumberFor(a: any, fallback: number): string {
@@ -224,11 +229,18 @@ export function TitleBar({
   cloud,
   agentEngine,
   onAgentEngineChange,
+  paperMode,
+  onTogglePaper,
+  onOpenTrackRecord,
+  eventTriggers,
+  onToggleEventTriggers,
 }: Props) {
   return (
     <div
       data-tauri-drag-region
-      className="flex h-11 shrink-0 items-center gap-5 border-b border-hairline bg-panel pr-4 pl-[84px]"
+      className={`flex h-11 shrink-0 items-center gap-5 border-b bg-panel pr-4 pl-[84px] ${
+        paperMode ? "border-amber/40" : "border-hairline"
+      }`}
     >
       <span
         data-tauri-drag-region
@@ -263,6 +275,47 @@ export function TitleBar({
       <MarketClock />
 
       <AgentEngineSwitch value={agentEngine} onChange={onAgentEngineChange} />
+
+      <button
+        onClick={onToggleEventTriggers}
+        title={
+          eventTriggers
+            ? "Event triggers ON — agents wake on 5% moves and new filings, not just the timer. Click to disable."
+            : "Event triggers OFF — agents run on their timer only. Click to wake them on market events."
+        }
+        className={`grid h-7 w-7 place-items-center rounded-sm border ${
+          eventTriggers
+            ? "border-amber/50 bg-amber-dim text-amber"
+            : "border-hairline text-ink-faint hover:border-amber/40 hover:text-ink-dim"
+        }`}
+      >
+        <Zap className="h-3.5 w-3.5" />
+      </button>
+
+      <button
+        onClick={onTogglePaper}
+        title={
+          paperMode
+            ? "Paper mode ON — approvals are simulated, nothing is sent to Robinhood. Click to go live."
+            : "Live mode — approvals place real orders. Click to switch to paper (dry-run)."
+        }
+        className={`flex h-7 items-center gap-1.5 rounded-sm border px-2 text-[10px] font-semibold tracking-[0.12em] uppercase ${
+          paperMode
+            ? "border-amber/50 bg-amber-dim text-amber"
+            : "border-hairline text-ink-faint hover:border-amber/40 hover:text-ink-dim"
+        }`}
+      >
+        <FlaskConical className="h-3.5 w-3.5" />
+        {paperMode ? "paper" : "live"}
+      </button>
+
+      <button
+        onClick={onOpenTrackRecord}
+        title="Track record — how the agents' proposals have performed"
+        className="grid h-7 w-7 place-items-center rounded-sm border border-hairline text-ink-dim hover:border-amber/50 hover:text-amber"
+      >
+        <Trophy className="h-3.5 w-3.5" />
+      </button>
 
       <button
         onClick={onOpenAlerts}

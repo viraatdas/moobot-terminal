@@ -13,7 +13,8 @@ export type LensType =
   | "thesis"
   | "exposure"
   | "lattice"
-  | "trade";
+  | "trade"
+  | "strategy";
 
 export type AgentEngine = "claude" | "codex";
 
@@ -42,9 +43,35 @@ const DATA_API = `Moobot Terminal exposes a local read-only API on http://127.0.
 - Your holdings (default account, or pass ?account=...): curl -s "http://127.0.0.1:4517/positions" → {equities[],options[],crypto[]} each with symbol, quantity, value, unrealizedPnl, and (options) strike/expiration/delta/iv.
 - Option chain: curl -s "http://127.0.0.1:4517/chain?symbol=SPY" then ...&expiration=YYYY-MM-DD.
 - Correlation lattice: curl -s "http://127.0.0.1:4517/lattice" → measured 30d/90d/252d correlations, risk-weighted relationships, clusters, and explicit measured/estimated source flags.
-This API is backed by the user's Robinhood MCP connection. If it returns {"error":...}, the user hasn't connected Robinhood yet; note that and use web research until they connect.`;
+- Prediction markets (Polymarket + Kalshi odds on a topic): curl -s "http://127.0.0.1:4517/predictions?q=fed+rate+cut" → {markets:[{source,question,probability(0..1),outcomes[],volume,closeTime,url}]}. Use these crowd-implied probabilities for event-driven theses (elections, macro prints, approvals, geopolitics); cite the probability + venue, and prefer higher-volume markets.
+This API is backed by the user's Robinhood MCP connection (predictions are public, no account needed). If a section returns {"error":...} or empty, note it and fall back to web research.`;
 
-const PROPOSAL_CONTRACT = `If (and only if) the evidence materially supports a trade, write ./proposals/<slug>.json: {"symbol","side":"buy"|"sell","quantity":<num>,"orderType":"market"|"limit","limitPrice":<num|null>,"thesis":"<3-5 sentences citing evidence>","confidence":1-10,"timeHorizon":"<e.g. 2 weeks>"}. You cannot place orders; a human approves every proposal. Most runs produce none.`;
+const PROPOSAL_CONTRACT = `If (and only if) the evidence materially supports a trade, write ./proposals/<slug>.json: {"symbol","side":"buy"|"sell","quantity":<num>,"orderType":"market"|"limit","limitPrice":<num|null>,"stop":<price|null>,"target":<price|null>,"thesis":"<3-5 sentences citing evidence>","whyNow":"<1-2 sentences naming the SPECIFIC new catalyst that tripped this NOW: a print, a filing, a price level - never generic context>","confidence":1-10,"timeHorizon":"<e.g. 2 weeks>"}. stop = the price that proves the thesis wrong; target = the price objective. You cannot place orders; a human approves every proposal. Most runs produce none.`;
+
+// The rule DSL the strategy agent compiles intent into. Kept in sync with
+// sidecar/src/backtest.ts (the evaluator) — both backtest and live read this spec.
+const STRATEGY_DSL = `STRATEGY SPEC — write ./strategy.json (overwrite each run):
+{
+ "version":1,
+ "universe":["TICKER",...],            // 1-12 US equities
+ "direction":"long"|"short",
+ "entry": <Condition>,                  // when to OPEN a position
+ "exit":  <Condition>,                  // when to CLOSE it
+ "sizing":{"type":"equityPct"|"fixedShares"|"fixedNotional","value":<num>},
+ "cooldownBars":<int>,                  // bars to wait after an exit before re-entering a symbol
+ "maxPositions":<int>,                  // max concurrent open positions across the universe
+ "llmGate": null | {"mode":"live-only","prompt":"<what a model must confirm at trigger time before it becomes a proposal>"},
+ "notes":"<one plain-English sentence describing the rule>"
+}
+Operand (resolves to a number at each bar) — a bare number, or one of:
+ {"price":"close"|"open"|"high"|"low"}, {"sma":N}, {"ema":N}, {"rsi":N}, {"atr":N},
+ {"returns":N} (% change over N bars), {"pctFromHigh":N} (% vs trailing N-bar high; negative=below),
+ {"pctFromLow":N}, {"volume":true}.
+Condition (resolves to a boolean):
+ a comparison {"lhs":Operand,"op":">"|"<"|">="|"<="|"crossesAbove"|"crossesBelow","rhs":Operand},
+ or {"all":[Condition,...]}, {"any":[Condition,...]}, {"not":Condition},
+ or (EXIT-ONLY, relative to the open position) {"trailingStop":PCT}, {"stopLoss":PCT}, {"takeProfit":PCT}, {"maxHoldBars":N}.
+Every threshold MUST be a concrete number — the spec is fully mechanical. It is replayed on historical prices (backtest) and evaluated live; the live LLM gate is the ONLY place model judgment enters and it NEVER runs in the backtest. Do not invent indicators outside this list.`;
 
 export interface LensDef {
   label: string;
@@ -210,10 +237,29 @@ ${DATA_API}
 
 Every run:
 1. Read the referenced lenses' latest outputs (above) plus live holdings/quotes/chains. Reconcile them with the user's intent.
-2. For each trade that the combined evidence supports, write ./proposals/<slug>.json: {"symbol","side":"buy"|"sell","quantity":<num>,"orderType":"market"|"limit","limitPrice":<num|null>,"thesis":"<cite which lens/evidence drove this, 3-5 sentences>","confidence":1-10,"timeHorizon":"..."}. These route to the user's approval queue and, on approval, the agentic trading account. You NEVER place orders yourself.
+2. For each trade that the combined evidence supports, write ./proposals/<slug>.json: {"symbol","side":"buy"|"sell","quantity":<num>,"orderType":"market"|"limit","limitPrice":<num|null>,"stop":<price|null>,"target":<price|null>,"thesis":"<cite which lens/evidence drove this, 3-5 sentences>","whyNow":"<1-2 sentences: the SPECIFIC new catalyst that tripped this now>","confidence":1-10,"timeHorizon":"..."}. stop = price that proves the thesis wrong; target = objective. These route to the user's approval queue and, on approval, the agentic trading account. You NEVER place orders yourself.
 3. Maintain ./trade.md: a short plan - what you're proposing and why, what you're waiting on.
 Propose only what the evidence + intent justify. Do the first pass now.`,
     loopPrompt: (tab, refContext) => `Re-evaluate the trade intent "${tab.topic}" against the latest from referenced lenses and live data.\n\n${refContext}\n\nUpdate ./trade.md and add/adjust proposals as the picture changes.`,
+  },
+  strategy: {
+    label: "Strategy",
+    extraTools: [],
+    firstPrompt: (tab, refContext) => `You are the STRATEGY lens inside Moobot Terminal. You and the user co-author a MECHANICAL trading algorithm: concrete, computable rules that can be backtested on historical prices and run live. You do NOT place trades and you do NOT write proposals — a separate runtime evaluates your rules and a human approves every resulting order.
+
+USER INTENT: ${tab.topic}
+${tab.notes ? `OPERATOR NOTES (refinements — honor these exactly): ${tab.notes}` : ""}
+${refContext ? `\n${refContext}` : ""}
+
+${DATA_API}
+
+Your job each run:
+1. Translate the intent into the strictest mechanical rules that faithfully express it. Pick a sensible universe, indicators, and thresholds. If the intent is vague, choose reasonable defaults and state them in "notes".
+2. ${STRATEGY_DSL}
+3. Maintain ./strategy.md: a short plain-English description — the universe, the entry rule, the exit rule, sizing, and (if any) what the live LLM gate is asked to confirm. Make it readable to a non-coder.
+
+Critical honesty rule: you KNOW how the past played out, so do NOT cherry-pick thresholds you remember worked. Choose rules that follow from the stated logic, not from hindsight. The backtest will split in-sample vs out-of-sample to expose overfitting. Write ./strategy.json and ./strategy.md now.`,
+    loopPrompt: (tab, refContext) => `Revise the strategy "${tab.topic}". Apply the operator notes exactly: ${tab.notes || "(none — keep current rules unless the intent changed)"}.${refContext ? `\n\n${refContext}` : ""}\n\nRewrite ./strategy.json and ./strategy.md to reflect the requested change. Keep every threshold concrete and mechanical; do not add indicators outside the documented DSL.`,
   },
 };
 
@@ -226,4 +272,5 @@ export const LENS_OUTPUT: Record<LensType, string[]> = {
   exposure: ["exposure.json"],
   lattice: ["lattice.json"],
   trade: ["trade.md"],
+  strategy: ["strategy.json", "strategy.md"],
 };

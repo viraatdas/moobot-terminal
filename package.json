@@ -11,6 +11,7 @@
     "build": "tsc && vite build",
     "build:sidecar": "esbuild sidecar/src/index.ts --bundle --platform=node --format=cjs --outfile=src-tauri/resources/sidecar.cjs",
     "build:bundle": "pnpm build && pnpm build:sidecar",
+    "test:engine": "node --test sidecar/test/*.test.ts",
     "release:mac": "node scripts/release-macos.mjs",
     "preview": "vite preview",
     "tauri": "tauri"

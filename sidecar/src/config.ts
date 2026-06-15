@@ -10,6 +10,9 @@ export const DATA_DIR =
 export const RESEARCH_DIR = path.join(DATA_DIR, "research");
 export const PROPOSALS_FILE = path.join(DATA_DIR, "proposals.json");
 export const RH_AUTH_FILE = path.join(DATA_DIR, "rh-oauth.json");
+export const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
+// Append-only audit trail of every approve/reject decision. Never mutated.
+export const DECISIONS_FILE = path.join(DATA_DIR, "decisions.jsonl");
 
 export const WS_PORT = Number(process.env.MOOBOT_PORT) || 4517;
 export const OAUTH_CALLBACK_PORT = 45171;

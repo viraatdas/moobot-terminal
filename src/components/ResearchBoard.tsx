@@ -4,6 +4,7 @@ import {
   Activity,
   Compass,
   Crosshair,
+  FlaskConical,
   Network,
   Pause,
   Play,
@@ -46,19 +47,12 @@ interface Props {
   agentEngine: AgentEngine;
   createLensRequest?: { id: number; type?: LensType } | null;
   selectTabRequest?: { id: number; tabId: string } | null;
+  creatingOnly?: boolean;
+  showTabStrip?: boolean;
   onActiveTabChange?: (tab: ResearchTab | null) => void;
+  onCreateLensDone?: (createdId: string | null) => void;
   onTabsChanged: () => void;
 }
-
-type ShortcutCommand =
-  | "close-tab"
-  | "new-tab"
-  | "run-active"
-  | "run-all"
-  | "next-tab"
-  | "previous-tab"
-  | "tab-last"
-  | `tab-${number}`;
 
 const SENTIMENT_STYLE: Record<string, string> = {
   bullish: "bg-pos-dim text-pos",
@@ -74,17 +68,12 @@ function LensIcon({ type, className = "h-3.5 w-3.5" }: { type: LensType; classNa
   if (type === "exposure") return <ShieldAlert className={cls} />;
   if (type === "lattice") return <Network className={cls} />;
   if (type === "trade") return <TrendingUp className={cls} />;
+  if (type === "strategy") return <FlaskConical className={cls} />;
   return <Search className={cls} />;
 }
 
 function normalizeTopic(topic: string): string {
   return topic.trim().toLowerCase();
-}
-
-function shortcutDigit(e: KeyboardEvent): number | null {
-  if (/^Digit[1-9]$/.test(e.code)) return Number(e.code.slice("Digit".length));
-  if (/^[1-9]$/.test(e.key)) return Number(e.key);
-  return null;
 }
 
 export function ResearchBoard({
@@ -93,10 +82,13 @@ export function ResearchBoard({
   agentEngine,
   createLensRequest,
   selectTabRequest,
+  creatingOnly = false,
+  showTabStrip = true,
   onActiveTabChange,
+  onCreateLensDone,
   onTabsChanged,
 }: Props) {
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(() => selectTabRequest?.tabId ?? null);
   const [findings, setFindings] = useState<{
     markdown: string;
     state: ResearchState | null;
@@ -107,7 +99,7 @@ export function ResearchBoard({
   const [createType, setCreateType] = useState<LensType>("research");
 
   const [autoBusy, setAutoBusy] = useState(false);
-  const active = tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null;
+  const active = creatingOnly ? null : (tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null);
 
   useEffect(() => {
     onActiveTabChange?.(active);
@@ -136,70 +128,6 @@ export function ResearchBoard({
       setActiveId(next?.id ?? null);
     },
     [onTabsChanged, tabs],
-  );
-
-  const runActive = useCallback(async () => {
-    if (!active || active.lastRunStatus === "running") return;
-    await client.request("research.run", { id: active.id });
-    onTabsChanged();
-  }, [active, onTabsChanged]);
-
-  const selectAdjacent = useCallback(
-    (dir: 1 | -1) => {
-      if (tabs.length === 0) return;
-      const idx = Math.max(0, tabs.findIndex((t) => t.id === active?.id));
-      const next = (idx + dir + tabs.length) % tabs.length;
-      setActiveId(tabs[next].id);
-    },
-    [active?.id, tabs],
-  );
-
-  const selectIndexedTab = useCallback(
-    (digit: number) => {
-      if (tabs.length === 0) return false;
-      const tab = digit === 9 ? tabs[tabs.length - 1] : tabs[digit - 1];
-      if (!tab) return false;
-      setActiveId(tab.id);
-      return true;
-    },
-    [tabs],
-  );
-
-  const runShortcut = useCallback(
-    (command: ShortcutCommand): boolean => {
-      if (command === "close-tab") {
-        if (!active) return false;
-        void closeTab(active);
-        return true;
-      }
-      if (command === "new-tab") {
-        setCreateType("research");
-        setCreating(true);
-        return true;
-      }
-      if (command === "run-all") {
-        void client.request("research.runAll");
-        onTabsChanged();
-        return true;
-      }
-      if (command === "run-active") {
-        if (!active) return false;
-        void runActive();
-        return true;
-      }
-      if (command === "next-tab") {
-        selectAdjacent(1);
-        return tabs.length > 0;
-      }
-      if (command === "previous-tab") {
-        selectAdjacent(-1);
-        return tabs.length > 0;
-      }
-      if (command === "tab-last") return selectIndexedTab(9);
-      if (command.startsWith("tab-")) return selectIndexedTab(Number(command.slice(4)));
-      return false;
-    },
-    [active, closeTab, onTabsChanged, runActive, selectAdjacent, selectIndexedTab, tabs.length],
   );
 
   // "Auto" - create or refresh a curated starter cockpit of book-wide lenses.
@@ -237,78 +165,6 @@ export function ResearchBoard({
   }
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-
-      if (e.metaKey && !e.ctrlKey && !e.altKey && key === "w") {
-        e.preventDefault();
-        runShortcut("close-tab");
-        return;
-      }
-
-      if (e.metaKey && !e.ctrlKey && !e.altKey && key === "t") {
-        e.preventDefault();
-        runShortcut("new-tab");
-        return;
-      }
-      if (e.metaKey && !e.ctrlKey && !e.altKey && key === "r" && e.shiftKey) {
-        e.preventDefault();
-        runShortcut("run-all");
-        return;
-      }
-      if (e.metaKey && !e.ctrlKey && !e.altKey && key === "r") {
-        e.preventDefault();
-        runShortcut("run-active");
-        return;
-      }
-
-      const digit = e.metaKey && !e.ctrlKey && !e.altKey ? shortcutDigit(e) : null;
-      if (digit !== null) {
-        if (runShortcut(digit === 9 ? "tab-last" : (`tab-${digit}` as ShortcutCommand))) {
-          e.preventDefault();
-        }
-        return;
-      }
-
-      const bracketRight = e.code === "BracketRight" || e.key === "]";
-      const bracketLeft = e.code === "BracketLeft" || e.key === "[";
-      const forward =
-        (e.ctrlKey && key === "tab" && !e.shiftKey) ||
-        (e.metaKey && !e.ctrlKey && !e.altKey && (bracketRight || (key === "tab" && !e.shiftKey)));
-      const back =
-        (e.ctrlKey && key === "tab" && e.shiftKey) ||
-        (e.metaKey && !e.ctrlKey && !e.altKey && (bracketLeft || (key === "tab" && e.shiftKey)));
-      if (forward || back) {
-        e.preventDefault();
-        runShortcut(forward ? "next-tab" : "previous-tab");
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [runShortcut]);
-
-  useEffect(() => {
-    if (!("__TAURI_INTERNALS__" in window)) return;
-    let dispose: (() => void) | null = null;
-    let cancelled = false;
-    void import("@tauri-apps/api/event")
-      .then(({ listen }) =>
-        listen<ShortcutCommand>("moobot://shortcut", (event) => {
-          runShortcut(event.payload);
-        }),
-      )
-      .then((unlisten) => {
-        if (cancelled) void unlisten();
-        else dispose = unlisten;
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-      if (dispose) void dispose();
-    };
-  }, [runShortcut]);
-
-  useEffect(() => {
     if (!activeId && tabs.length > 0) setActiveId(tabs[0].id);
   }, [tabs, activeId]);
 
@@ -339,58 +195,60 @@ export function ResearchBoard({
   return (
     <div className="flex min-h-0 flex-col bg-bg">
       {/* tab strip */}
-      <div className="flex h-10 shrink-0 items-stretch gap-px overflow-x-auto border-b border-hairline bg-panel">
-        {tabs.map((t) => (
+      {showTabStrip && (
+        <div className="flex h-10 shrink-0 items-stretch gap-px overflow-x-auto border-b border-hairline bg-panel">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveId(t.id)}
+              className={`group flex shrink-0 items-center gap-2 border-b-2 px-4 text-[12px] font-medium transition-colors ${
+                active?.id === t.id
+                  ? "border-amber bg-bg text-ink"
+                  : "border-transparent text-ink-faint hover:text-ink-dim"
+              }`}
+            >
+              {t.lastRunStatus === "running" ? (
+                <span className="h-1.5 w-1.5 rounded-full bg-amber pulse-dot" />
+              ) : t.lastRunStatus === "error" ? (
+                <span className="h-1.5 w-1.5 rounded-full bg-neg" />
+              ) : (
+                <LensIcon type={t.type} className="h-3 w-3 text-ink-faint" />
+              )}
+              <span className="max-w-44 truncate">{t.topic || LENS_META[t.type]?.label}</span>
+            </button>
+          ))}
           <button
-            key={t.id}
-            onClick={() => setActiveId(t.id)}
-            className={`group flex shrink-0 items-center gap-2 border-b-2 px-4 text-[12px] font-medium transition-colors ${
-              active?.id === t.id
-                ? "border-amber bg-bg text-ink"
-                : "border-transparent text-ink-faint hover:text-ink-dim"
-            }`}
+            onClick={() => {
+              setCreateType("research");
+              setCreating(true);
+            }}
+            className="shrink-0 px-4 text-[16px] text-ink-faint hover:text-amber"
+            title="New lens tab (⌘T)"
           >
-            {t.lastRunStatus === "running" ? (
-              <span className="h-1.5 w-1.5 rounded-full bg-amber pulse-dot" />
-            ) : t.lastRunStatus === "error" ? (
-              <span className="h-1.5 w-1.5 rounded-full bg-neg" />
-            ) : (
-              <LensIcon type={t.type} className="h-3 w-3 text-ink-faint" />
+            <Plus className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => void autoSetup()}
+            disabled={autoBusy}
+            className="flex shrink-0 items-center gap-1.5 px-3 text-[11px] font-medium text-ink-faint hover:text-amber disabled:opacity-50"
+            title="Create or refresh Pulse + Exposure + Lattice"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {autoBusy ? "…" : "Auto"}
+          </button>
+          <div className="flex-1" />
+          {tabs.length > 0 && (
+            <button
+              onClick={() => void client.request("research.runAll")}
+              className="flex shrink-0 items-center gap-1.5 px-3 text-[10px] tracking-wide text-ink-faint uppercase hover:text-amber"
+              title="Run every unpaused research tab now (⇧⌘R)"
+            >
+              <Play className="h-3 w-3" />
+              Run all
+            </button>
             )}
-            <span className="max-w-44 truncate">{t.topic || LENS_META[t.type]?.label}</span>
-          </button>
-        ))}
-        <button
-          onClick={() => {
-            setCreateType("research");
-            setCreating(true);
-          }}
-          className="shrink-0 px-4 text-[16px] text-ink-faint hover:text-amber"
-          title="New lens tab (⌘T)"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => void autoSetup()}
-          disabled={autoBusy}
-          className="flex shrink-0 items-center gap-1.5 px-3 text-[11px] font-medium text-ink-faint hover:text-amber disabled:opacity-50"
-          title="Create or refresh Pulse + Exposure + Lattice"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          {autoBusy ? "…" : "Auto"}
-        </button>
-        <div className="flex-1" />
-        {tabs.length > 0 && (
-          <button
-            onClick={() => void client.request("research.runAll")}
-            className="flex shrink-0 items-center gap-1.5 px-3 text-[10px] tracking-wide text-ink-faint uppercase hover:text-amber"
-            title="Run every unpaused research tab now (⇧⌘R)"
-          >
-            <Play className="h-3 w-3" />
-            Run all
-          </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {creating && (
         <NewTabForm
@@ -403,6 +261,7 @@ export function ResearchBoard({
               onTabsChanged();
               setActiveId(created);
             }
+            onCreateLensDone?.(created);
           }}
         />
       )}
@@ -509,7 +368,7 @@ export function ResearchBoard({
                 )}
               </div>
             ) : (
-              <LensSurface type={active.type} lens={findings.lens} />
+              <LensSurface type={active.type} lens={findings.lens} tabId={active.id} />
             )}
           </div>
         </div>
@@ -667,7 +526,7 @@ function RunControls({
   );
 }
 
-const LENS_ORDER: LensType[] = ["research", "pulse", "scout", "thesis", "exposure", "lattice", "trade"];
+const LENS_ORDER: LensType[] = ["research", "pulse", "scout", "thesis", "exposure", "lattice", "trade", "strategy"];
 
 function NewTabForm({
   tabs,
@@ -698,7 +557,9 @@ function NewTabForm({
 
   const meta = LENS_META[type];
   const topicLabel =
-    type === "trade"
+    type === "strategy"
+      ? "Strategy intent, e.g. buy semis on a 50/200 golden cross, trail an 8% stop"
+      : type === "trade"
       ? "Intent, e.g. hedge my tech concentration, add to NVDA on dips"
       : type === "pulse"
         ? "Focus optional, blank scans your whole book + market"
@@ -794,7 +655,7 @@ function NewTabForm({
       </div>
 
       {/* @-reference other tabs as context. */}
-      {(["research", "scout", "thesis", "trade"] as LensType[]).includes(type) &&
+      {(["research", "scout", "thesis", "trade", "strategy"] as LensType[]).includes(type) &&
         tabs.length > 0 && (
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-[9.5px] tracking-[0.16em] uppercase text-ink-faint">

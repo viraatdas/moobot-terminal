@@ -1,4 +1,5 @@
 import type { Position, RobinhoodMcpData } from "./rh-mcp-data.ts";
+import { secFilingsAndNews } from "./sec-filings.ts";
 
 export type MarketEventSeverity = "low" | "medium" | "high";
 
@@ -11,6 +12,7 @@ export interface MarketEvent {
   symbols: string[];
   at: string;
   source?: string;
+  url?: string;
   details?: Record<string, unknown>;
 }
 
@@ -96,25 +98,49 @@ function normalizeSymbols(values: unknown): string[] {
   ];
 }
 
-function buildPlaceholders(symbols: string[]): MarketEventsPlaceholder[] {
-  return [
-    {
-      source: "filings",
-      status: "unavailable",
-      title: "Filings unavailable",
-      description:
-        "No filings calendar is configured for the sidecar. This endpoint does not guess SEC or issuer filing dates.",
-      symbols,
-    },
-    {
-      source: "news",
-      status: "unavailable",
-      title: "News unavailable",
-      description:
-        "No news feed is configured for the sidecar. This endpoint returns position-derived events only.",
-      symbols,
-    },
-  ];
+function buildNoPlaceholder(
+  symbols: string[],
+  source: MarketEventsPlaceholder["source"],
+  reason: string,
+): MarketEventsPlaceholder {
+  return {
+    source,
+    status: "unavailable",
+    title: source === "filings" ? "Filings unavailable" : "News unavailable",
+    description: reason,
+    symbols,
+  };
+}
+
+function buildPlaceholders(
+  symbols: string[],
+  hasFilings: boolean,
+  hasNews: boolean,
+  filingsReason: string | null,
+  newsReason: string | null,
+): MarketEventsPlaceholder[] {
+  const placeholders: MarketEventsPlaceholder[] = [];
+  if (!hasFilings) {
+    placeholders.push(
+      buildNoPlaceholder(
+        symbols,
+        "filings",
+        filingsReason ??
+          "No SEC filing activity was found in the requested lookback window.",
+      ),
+    );
+  }
+  if (!hasNews) {
+    placeholders.push(
+      buildNoPlaceholder(
+        symbols,
+        "news",
+        newsReason ??
+          "No SEC material news-grade filings were found in the requested lookback window.",
+      ),
+    );
+  }
+  return placeholders;
 }
 
 export class MarketEventsService {
@@ -179,9 +205,7 @@ export class MarketEventsService {
           }`,
           type: "expiry",
           title: `${optionTitle(position)} near expiry`,
-          detail: `${contractLabel(Math.abs(quantity))} expire in ${days} day${
-            days === 1 ? "" : "s"
-          }. Marked value ${formatMoney(value)}.`,
+          detail: `${contractLabel(Math.abs(quantity))} expire in ${days} day${days === 1 ? "" : "s"}. Marked value ${formatMoney(value)}.`,
           severity: severityForDays(days),
           symbols: [position.symbol],
           at: position.expirationDate,
@@ -233,13 +257,31 @@ export class MarketEventsService {
       };
     });
 
+    const querySymbols = symbols.filter((symbol) => symbol !== "CRYPTO");
+    const { filings, news } = await secFilingsAndNews(querySymbols, windowDays);
+    const placeholders = buildPlaceholders(
+      querySymbols,
+      filings.length > 0,
+      news.length > 0,
+      filings.length > 0
+        ? null
+        : querySymbols.length > 0
+          ? "No SEC filings were returned in the current request window."
+          : "No symbols were provided for SEC filing lookup.",
+      news.length > 0
+        ? null
+        : querySymbols.length > 0
+          ? "No SEC news-grade filings were found in the current request window."
+          : "No symbols were provided for SEC filing lookup.",
+    );
+
     return {
       updatedAt: now,
       accountNumber: snapshot.accountNumber,
       windowDays,
       nearExpiryDays,
-      events: [...nearExpiry, ...expirations].sort((a, b) => b.at.localeCompare(a.at)),
-      placeholders: buildPlaceholders(symbols),
+      events: [...nearExpiry, ...expirations, ...filings, ...news].sort((a, b) => b.at.localeCompare(a.at)),
+      placeholders,
     };
   }
 }

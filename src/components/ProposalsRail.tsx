@@ -5,6 +5,7 @@ interface Props {
   proposals: TradeProposal[];
   accountNumber: string | null;
   tradeAccountAgentic: boolean;
+  paperMode: boolean;
   onChanged: () => void;
 }
 
@@ -12,6 +13,7 @@ export function ProposalsRail({
   proposals,
   accountNumber,
   tradeAccountAgentic,
+  paperMode,
   onChanged,
 }: Props) {
   const pending = proposals.filter((p) => p.status === "pending");
@@ -20,8 +22,13 @@ export function ProposalsRail({
   return (
     <div className="flex min-h-0 flex-col bg-bg">
       <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
-        <span className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">
+        <span className="flex items-center gap-2 text-[10px] tracking-[0.16em] uppercase text-ink-faint">
           Trade proposals
+          {paperMode && (
+            <span className="rounded-sm border border-amber/40 bg-amber-dim px-1.5 py-0.5 text-[9px] font-semibold text-amber">
+              paper
+            </span>
+          )}
         </span>
         {pending.length > 0 && (
           <span className="font-data rounded-sm bg-amber-dim px-1.5 py-0.5 text-[10px] font-semibold text-amber">
@@ -44,6 +51,7 @@ export function ProposalsRail({
             key={p.id}
             p={p}
             accountNumber={accountNumber}
+            paperMode={paperMode}
             onChanged={onChanged}
           />
         ))}
@@ -81,7 +89,7 @@ export function ProposalsRail({
         )}
       </div>
 
-      <OrderTicket accountNumber={accountNumber} agentic={tradeAccountAgentic} />
+      <OrderTicket accountNumber={accountNumber} agentic={tradeAccountAgentic} paperMode={paperMode} />
     </div>
   );
 }
@@ -89,36 +97,76 @@ export function ProposalsRail({
 function ProposalCard({
   p,
   accountNumber,
+  paperMode,
   onChanged,
 }: {
   p: TradeProposal;
   accountNumber: string | null;
+  paperMode: boolean;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(true);
+  // Editable approval ticket — prefilled from the agent's proposal.
+  const [qty, setQty] = useState(String(p.quantity));
+  const [orderType, setOrderType] = useState<"market" | "limit">(p.orderType);
+  const [limit, setLimit] = useState(p.limitPrice != null ? String(p.limitPrice) : "");
 
-  async function act(action: "approve" | "reject") {
+  const editedQty = Number(qty);
+  const editedLimit = orderType === "limit" ? Number(limit) : null;
+  const modified =
+    editedQty !== p.quantity ||
+    orderType !== p.orderType ||
+    (orderType === "limit" && editedLimit !== p.limitPrice);
+
+  async function approve() {
     if (busy) return;
-    if (action === "approve") {
-      if (!accountNumber) {
-        alert("No Robinhood account selected.");
-        return;
-      }
-      const desc = `${p.side.toUpperCase()} ${p.quantity} ${p.symbol} ${
-        p.orderType === "limit" ? `@ limit ${fmtMoney(p.limitPrice)}` : "@ market"
-      }`;
-      if (!confirm(`Place real order?\n\n${desc}\nAccount ${accountNumber}`)) return;
+    if (!accountNumber) {
+      alert("No Robinhood account selected.");
+      return;
     }
+    if (!Number.isFinite(editedQty) || editedQty <= 0) {
+      alert("Quantity must be greater than 0.");
+      return;
+    }
+    if (orderType === "limit" && (!Number.isFinite(editedLimit!) || editedLimit! <= 0)) {
+      alert("Limit orders need a positive limit price.");
+      return;
+    }
+    const desc = `${p.side.toUpperCase()} ${editedQty} ${p.symbol} ${
+      orderType === "limit" ? `@ limit ${fmtMoney(editedLimit)}` : "@ market"
+    }`;
+    const title = paperMode ? "Simulate this order? (paper mode)" : "Place real order?";
+    if (!confirm(`${title}\n\n${desc}${modified ? "\n(edited from the proposal)" : ""}\nAccount ${accountNumber}`))
+      return;
     setBusy(true);
     try {
-      await client.request(`proposals.${action}`, { id: p.id, accountNumber });
+      await client.request("proposals.approve", {
+        id: p.id,
+        accountNumber,
+        overrides: { quantity: editedQty, orderType, limitPrice: editedLimit },
+      });
     } catch (err) {
       alert(String(err));
     }
     setBusy(false);
     onChanged();
   }
+
+  async function reject() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await client.request("proposals.reject", { id: p.id });
+    } catch (err) {
+      alert(String(err));
+    }
+    setBusy(false);
+    onChanged();
+  }
+
+  const editCls =
+    "font-data rounded-sm border border-hairline bg-bg px-1.5 py-1 text-[11px] text-ink focus:border-amber/50 focus:outline-none w-full";
 
   return (
     <div className="mb-2.5 rounded-sm border border-amber/25 bg-panel">
@@ -141,23 +189,73 @@ function ProposalCard({
       </button>
       {expanded && (
         <div className="px-3 pb-1">
+          {p.whyNow && (
+            <div className="mb-1.5 flex gap-1.5 rounded-sm border border-amber/20 bg-amber-dim/40 px-2 py-1.5">
+              <span className="mt-px shrink-0 text-[8.5px] font-semibold tracking-[0.12em] text-amber uppercase">
+                why now
+              </span>
+              <span className="text-[11px] leading-snug text-ink-dim select-text">{p.whyNow}</span>
+            </div>
+          )}
           <div className="text-[11.5px] leading-relaxed text-ink-dim select-text">{p.thesis}</div>
+          {(p.stop != null || p.target != null) && (
+            <div className="font-data mt-1.5 flex gap-3 text-[10px]">
+              {p.target != null && (
+                <span className="text-pos">target {fmtMoney(p.target)}</span>
+              )}
+              {p.stop != null && <span className="text-neg">stop {fmtMoney(p.stop)}</span>}
+            </div>
+          )}
           <div className="font-data mt-1.5 text-[10px] text-ink-faint">
             from “{p.tabTopic}”{p.timeHorizon ? ` · horizon ${p.timeHorizon}` : ""}
           </div>
+
+          <div className="mt-2 rounded-sm border border-hairline bg-bg/40 p-2">
+            <div className="mb-1.5 flex items-center justify-between text-[9px] tracking-[0.14em] text-ink-faint uppercase">
+              <span>order ticket</span>
+              {modified && <span className="text-amber">edited</span>}
+            </div>
+            <div className="grid grid-cols-[64px_1fr_1fr] gap-1.5">
+              <input
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                aria-label="quantity"
+                className={editCls}
+              />
+              <select
+                value={orderType}
+                onChange={(e) => setOrderType(e.target.value as "market" | "limit")}
+                className="font-data rounded-sm border border-hairline bg-bg px-1.5 text-[11px] text-ink-dim outline-none"
+              >
+                <option value="market">market</option>
+                <option value="limit">limit</option>
+              </select>
+              {orderType === "limit" ? (
+                <input
+                  value={limit}
+                  onChange={(e) => setLimit(e.target.value)}
+                  placeholder="LIMIT $"
+                  aria-label="limit price"
+                  className={editCls}
+                />
+              ) : (
+                <div className="grid place-items-center text-[10px] text-ink-faint">at market</div>
+              )}
+            </div>
+          </div>
         </div>
       )}
-      <div className="flex gap-px border-t border-hairline">
+      <div className="mt-1.5 flex gap-px border-t border-hairline">
         <button
           disabled={busy}
-          onClick={() => void act("approve")}
+          onClick={() => void approve()}
           className="flex-1 py-2 text-[11px] font-semibold tracking-[0.08em] text-pos uppercase hover:bg-pos-dim disabled:opacity-40"
         >
-          Approve
+          {modified ? "Approve edited" : "Approve"}
         </button>
         <button
           disabled={busy}
-          onClick={() => void act("reject")}
+          onClick={() => void reject()}
           className="flex-1 border-l border-hairline py-2 text-[11px] font-semibold tracking-[0.08em] text-ink-faint uppercase hover:bg-neg-dim hover:text-neg disabled:opacity-40"
         >
           Reject
@@ -170,9 +268,11 @@ function ProposalCard({
 function OrderTicket({
   accountNumber,
   agentic,
+  paperMode,
 }: {
   accountNumber: string | null;
   agentic: boolean;
+  paperMode: boolean;
 }) {
   const [symbol, setSymbol] = useState("");
   const [side, setSide] = useState<"buy" | "sell">("buy");
@@ -241,12 +341,15 @@ function OrderTicket({
     const desc = `${side.toUpperCase()} ${qty} ${symbol.trim().toUpperCase()} ${
       type === "limit" ? `at limit ${limit}` : "at market"
     }`;
-    if (!confirm(`Place real order?\n\n${desc}\nAccount ${accountNumber}`)) return;
+    const title = paperMode ? "Simulate this order? (paper mode)" : "Place real order?";
+    if (!confirm(`${title}\n\n${desc}\nAccount ${accountNumber}`)) return;
     setBusy(true);
     setMsg(null);
     try {
       await client.request("trade.place", { order, confirmed: true, reviewToken });
-      setMsg(`Order placed: ${side.toUpperCase()} ${qty} ${symbol.toUpperCase()}`);
+      setMsg(
+        `${paperMode ? "Simulated (paper)" : "Order placed"}: ${side.toUpperCase()} ${qty} ${symbol.toUpperCase()}`,
+      );
       setReview(null);
       setReviewToken(null);
       setReviewExpiresAt(null);
@@ -265,8 +368,13 @@ function OrderTicket({
   return (
     <div className="shrink-0 border-t border-hairline bg-panel p-3">
       <div className="mb-2 flex items-baseline justify-between">
-        <span className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">
+        <span className="flex items-center gap-1.5 text-[10px] tracking-[0.16em] uppercase text-ink-faint">
           Order ticket
+          {paperMode && (
+            <span className="rounded-sm border border-amber/40 bg-amber-dim px-1 py-0.5 text-[8.5px] font-semibold text-amber">
+              paper
+            </span>
+          )}
         </span>
         {accountNumber && (
           <span className="font-data text-[9.5px] text-ink-faint">

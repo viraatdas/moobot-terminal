@@ -1,6 +1,9 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BarChart3, CandlestickChart, Loader2, Search } from "lucide-react";
 import { client, fmtMoney, type Position } from "../lib/client";
+import { fmtSigned } from "../lib/format";
+import { finiteNumber, isRecord } from "../lib/guards";
+import { areaFor, indexFromClientX, scale } from "../lib/charts";
 
 type RangeKey = "1D" | "5D" | "1M" | "3M" | "1Y";
 
@@ -50,13 +53,29 @@ function niceTime(value: string | undefined, range: RangeKey): string {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+function cursorTime(value: string | undefined, range: RangeKey): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return value;
+  if (range === "1D" || range === "5D") {
+    return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${d.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    })}`;
+  }
+  return d.toLocaleDateString([], { month: "short", day: "numeric", year: "2-digit" });
 }
 
-function finiteNumber(value: unknown): number | null {
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : null;
+function spanLabel(fromMs: number, toMs: number): string {
+  const mins = Math.max(0, Math.round((toMs - fromMs) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const hours = mins / 60;
+  if (hours < 24) return `${hours.toFixed(hours < 10 ? 1 : 0)}h`;
+  const days = hours / 24;
+  if (days < 31) return `${days.toFixed(days < 10 ? 1 : 0)}d`;
+  const months = days / 30.44;
+  if (months < 12) return `${months.toFixed(months < 10 ? 1 : 0)}mo`;
+  return `${(days / 365).toFixed(1)}y`;
 }
 
 function normalizeCandle(raw: unknown): ChartCandle | null {
@@ -107,17 +126,8 @@ function normalizeHistory(payload: unknown, fallbackSymbol: string): ChartHistor
   };
 }
 
-function scale(value: number, min: number, max: number, size: number): number {
-  if (max <= min) return size / 2;
-  return size - ((value - min) / (max - min)) * size;
-}
-
-function pathFor(candles: ChartCandle[], width: number, height: number): string {
+function pathFor(candles: ChartCandle[], width: number, height: number, min: number, max: number): string {
   if (candles.length === 0) return "";
-  const lows = candles.map((c) => c.low);
-  const highs = candles.map((c) => c.high);
-  const min = Math.min(...lows);
-  const max = Math.max(...highs);
   const step = candles.length > 1 ? width / (candles.length - 1) : width;
   return candles
     .map((c, i) => {
@@ -126,11 +136,6 @@ function pathFor(candles: ChartCandle[], width: number, height: number): string 
       return `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
     })
     .join(" ");
-}
-
-function areaFor(linePath: string, width: number, height: number): string {
-  if (!linePath) return "";
-  return `${linePath} L${width} ${height} L0 ${height} Z`;
 }
 
 function chartStats(candles: ChartCandle[]) {
@@ -150,6 +155,9 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
   const [history, setHistory] = useState<ChartHistory | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
+  const dragRef = useRef<{ start: number; moved: boolean } | null>(null);
   const areaId = `chartArea-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   useEffect(() => {
@@ -168,6 +176,9 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
     const config = RANGE_CONFIG[range];
     setBusy(true);
     setError(null);
+    setHoverIndex(null);
+    setSelection(null);
+    dragRef.current = null;
     client
       .request("market.history", {
         symbol: activeSymbol,
@@ -196,10 +207,49 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
   const held = positions.find((p) => cleanSymbol(p.symbol) === activeSymbol);
   const w = 820;
   const h = 285;
-  const line = pathFor(candles, w, h);
+  // Price domain (min-of-lows / max-of-highs) computed ONCE and fed to both the
+  // line path and the hover/selection dot placement, so they can never drift.
+  // Raw low/high domain with no padding — keep it that way (see lib/charts).
+  const priceBounds = useMemo(() => {
+    if (candles.length === 0) return { min: 0, max: 1 };
+    return {
+      min: Math.min(...candles.map((c) => c.low)),
+      max: Math.max(...candles.map((c) => c.high)),
+    };
+  }, [candles]);
+  const line = pathFor(candles, w, h, priceBounds.min, priceBounds.max);
   const area = areaFor(line, w, h);
   const positive = (stats?.change ?? 0) >= 0;
   const maxVolume = Math.max(1, ...candles.map((c) => c.volume || 0));
+
+  const xForIndex = (i: number) => (candles.length > 1 ? (i / (candles.length - 1)) * w : w);
+  const yForClose = (close: number) => scale(close, priceBounds.min, priceBounds.max, h);
+
+  const hoverCandle = hoverIndex !== null ? candles[hoverIndex] ?? null : null;
+  const hoverDelta =
+    hoverCandle && stats ? { abs: hoverCandle.close - stats.first, pct: stats.first > 0 ? ((hoverCandle.close - stats.first) / stats.first) * 100 : 0 } : null;
+  const sel = useMemo(() => {
+    if (!selection) return null;
+    const a = Math.min(selection.start, selection.end);
+    const b = Math.max(selection.start, selection.end);
+    const ca = candles[a];
+    const cb = candles[b];
+    if (!ca || !cb || a === b) return null;
+    const diff = cb.close - ca.close;
+    const pct = ca.close > 0 ? (diff / ca.close) * 100 : 0;
+    const slice = candles.slice(a, b + 1);
+    return {
+      a,
+      b,
+      ca,
+      cb,
+      diff,
+      pct,
+      high: Math.max(...slice.map((c) => c.high)),
+      low: Math.min(...slice.map((c) => c.low)),
+      up: diff >= 0,
+    };
+  }, [selection, candles]);
   const submitSymbol = () => {
     const next = cleanSymbol(input);
     if (!next) return;
@@ -222,12 +272,37 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
               </span>
             )}
           </div>
-          {stats ? (
+          {sel ? (
+            <div className="font-data mt-1 flex items-baseline gap-2 text-[11px]">
+              <span className="rounded-sm bg-amber-dim px-1 text-[9px] tracking-[0.1em] text-amber uppercase">
+                selection
+              </span>
+              <span className="text-ink-dim">
+                {fmtMoney(sel.ca.close)} <span className="text-ink-faint">→</span> {fmtMoney(sel.cb.close)}
+              </span>
+              <span className={sel.up ? "text-pos" : "text-neg"}>
+                {fmtSigned(sel.diff)} ({sel.up ? "+" : ""}
+                {sel.pct.toFixed(2)}%)
+              </span>
+              <span className="text-ink-faint">
+                {spanLabel(Date.parse(sel.ca.time), Date.parse(sel.cb.time))} · high {fmtMoney(sel.high)} · low{" "}
+                {fmtMoney(sel.low)}
+              </span>
+            </div>
+          ) : hoverCandle && hoverDelta ? (
+            <div className="font-data mt-1 flex items-baseline gap-2 text-[11px]">
+              <span className="text-ink">{fmtMoney(hoverCandle.close)}</span>
+              <span className={hoverDelta.abs >= 0 ? "text-pos" : "text-neg"}>
+                {fmtSigned(hoverDelta.abs)} ({hoverDelta.abs >= 0 ? "+" : ""}
+                {hoverDelta.pct.toFixed(2)}%)
+              </span>
+              <span className="text-ink-faint">{cursorTime(hoverCandle.time, range)}</span>
+            </div>
+          ) : stats ? (
             <div className="font-data mt-1 flex items-baseline gap-2 text-[11px]">
               <span className="text-ink">{fmtMoney(stats.last)}</span>
               <span className={positive ? "text-pos" : "text-neg"}>
-                {positive ? "+" : ""}
-                {fmtMoney(stats.change)} ({positive ? "+" : ""}
+                {fmtSigned(stats.change)} ({positive ? "+" : ""}
                 {stats.changePct.toFixed(2)}%)
               </span>
               <span className="text-ink-faint">
@@ -321,6 +396,50 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
               strokeLinecap="round"
               strokeLinejoin="round"
             />
+            {sel && (
+              <g pointerEvents="none">
+                <rect
+                  x={xForIndex(sel.a)}
+                  y={0}
+                  width={Math.max(1, xForIndex(sel.b) - xForIndex(sel.a))}
+                  height={h}
+                  fill="var(--color-amber)"
+                  opacity="0.08"
+                />
+                <line x1={xForIndex(sel.a)} x2={xForIndex(sel.a)} y1={0} y2={h} stroke="var(--color-amber)" strokeOpacity="0.5" strokeDasharray="4 5" />
+                <line x1={xForIndex(sel.b)} x2={xForIndex(sel.b)} y1={0} y2={h} stroke="var(--color-amber)" strokeOpacity="0.5" strokeDasharray="4 5" />
+                <circle cx={xForIndex(sel.a)} cy={yForClose(sel.ca.close)} r="4" fill="var(--color-amber)" stroke="var(--color-bg)" strokeWidth="2.5" />
+                <circle
+                  cx={xForIndex(sel.b)}
+                  cy={yForClose(sel.cb.close)}
+                  r="4"
+                  fill={sel.up ? "var(--color-pos)" : "var(--color-neg)"}
+                  stroke="var(--color-bg)"
+                  strokeWidth="2.5"
+                />
+              </g>
+            )}
+            {hoverCandle && hoverIndex !== null && (
+              <g pointerEvents="none">
+                <line
+                  x1={xForIndex(hoverIndex)}
+                  x2={xForIndex(hoverIndex)}
+                  y1={0}
+                  y2={h}
+                  stroke="var(--color-ink-faint)"
+                  strokeOpacity="0.45"
+                  strokeDasharray="4 6"
+                />
+                <circle
+                  cx={xForIndex(hoverIndex)}
+                  cy={yForClose(hoverCandle.close)}
+                  r="4"
+                  fill={positive ? "var(--color-pos)" : "var(--color-neg)"}
+                  stroke="var(--color-bg)"
+                  strokeWidth="2.5"
+                />
+              </g>
+            )}
             {held && stats && (
               <g transform={`translate(${w - 166}, 14)`}>
                 <rect width="154" height="56" rx="4" fill="var(--color-panel)" stroke="var(--color-hairline-2)" />
@@ -374,6 +493,40 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
                 {niceTime(candles[candles.length - 1]?.time, range)}
               </text>
             </g>
+            <rect
+              x="0"
+              y="0"
+              width={w}
+              height={h}
+              fill="transparent"
+              style={{ cursor: "crosshair" }}
+              onMouseDown={(event) => {
+                const i = indexFromClientX(event.clientX, event.currentTarget.getBoundingClientRect(), candles.length);
+                dragRef.current = { start: i, moved: false };
+                setSelection(null);
+                setHoverIndex(i);
+              }}
+              onMouseMove={(event) => {
+                const i = indexFromClientX(event.clientX, event.currentTarget.getBoundingClientRect(), candles.length);
+                setHoverIndex(i);
+                const drag = dragRef.current;
+                if (drag) {
+                  if (i !== drag.start) drag.moved = true;
+                  if (drag.moved) setSelection({ start: drag.start, end: i });
+                }
+              }}
+              onMouseUp={() => {
+                const drag = dragRef.current;
+                if (drag && !drag.moved) setSelection(null);
+                dragRef.current = null;
+              }}
+              onMouseLeave={() => {
+                const drag = dragRef.current;
+                if (drag && !drag.moved) setSelection(null);
+                dragRef.current = null;
+                setHoverIndex(null);
+              }}
+            />
           </svg>
         )}
       </div>
@@ -383,7 +536,9 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
           <BarChart3 className="h-3.5 w-3.5" />
           {history?.warning ?? "Yahoo market history, cached locally"}
         </span>
-        <span className="font-data">{candles.length} bars</span>
+        <span className="font-data">
+          {sel ? "click chart to clear selection" : "drag across the chart to compare"} · {candles.length} bars
+        </span>
       </div>
     </section>
   );
