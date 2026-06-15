@@ -3,13 +3,11 @@
 A Mac trading terminal with an AI research desk. Trade through Robinhood, run
 continuous research agents per topic, approve every trade yourself.
 
-**https://mooterminal.viraat.dev**
+**https://moobot.exla.ai**
 
 ## Install
 
-```sh
-brew install --cask viraatdas/tap/moobot-terminal
-```
+Download the signed &amp; notarized macOS app from **[moobot.exla.ai](https://moobot.exla.ai)**.
 
 Requires Apple Silicon, [Claude Code](https://claude.com/claude-code) or
 [Codex](https://developers.openai.com/codex), and Node 22+. Connect Robinhood
