@@ -189,6 +189,14 @@ export function PortfolioPerformanceModal({ accountNumber, onClose }: Props) {
   }, [accountNumber, range]);
 
   const stats = useMemo(() => (points.length ? chartStats(points) : null), [points]);
+  // ~6 evenly-spaced x-axis tick indices. Rendering a label per visible point (the
+  // old `i % ceil(n/120)`) smeared ~120 overlapping dates into an illegible band.
+  const axisTicks = useMemo(() => {
+    const n = points.length;
+    if (n < 2) return n === 1 ? [0] : [];
+    const count = Math.min(6, n);
+    return [...new Set(Array.from({ length: count }, (_, k) => Math.round((k / (count - 1)) * (n - 1))))];
+  }, [points]);
   const w = 1024;
   const h = 300;
   const path = pathFor(points, w, h);
@@ -448,23 +456,19 @@ export function PortfolioPerformanceModal({ accountNumber, onClose }: Props) {
                   </g>
                 )}
                 <g transform={`translate(0, ${h + 12})`}>
-                  {points.map((point, i) => {
-                    if (i % Math.ceil(points.length / 120) !== 0) return null;
-                    const x = (i / Math.max(1, points.length - 1)) * w;
-                    return (
-                      <text
-                        key={`${point.time}-${i}`}
-                        x={x}
-                        y="19"
-                        fill="var(--color-ink-faint)"
-                        fontSize="9"
-                        className="font-data"
-                        textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}
-                      >
-                        {fmtDateTime(point.time)}
-                      </text>
-                    );
-                  })}
+                  {axisTicks.map((i, k) => (
+                    <text
+                      key={i}
+                      x={(i / Math.max(1, points.length - 1)) * w}
+                      y="19"
+                      fill="var(--color-ink-faint)"
+                      fontSize="9"
+                      className="font-data"
+                      textAnchor={k === 0 ? "start" : k === axisTicks.length - 1 ? "end" : "middle"}
+                    >
+                      {fmtDateTime(points[i].time)}
+                    </text>
+                  ))}
                 </g>
               </svg>
             </div>

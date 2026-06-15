@@ -33,6 +33,14 @@ export interface ProposalQueueDeps {
   isPaper?: () => boolean;
   /** Append-only audit trail. */
   decisions?: DecisionLog;
+  /** Paper-only: auto-approve newly-ingested proposals with no human review. The
+   * SettingsStore returns true here ONLY in paper mode, so this can never reach
+   * real money. */
+  autoApprove?: () => boolean;
+  /** Account used for auto-approved orders (unused in paper, where nothing is sent). */
+  tradeAccount?: () => string;
+  /** Fired after an auto-approved proposal executes (e.g. to send a notification). */
+  onTradeExecuted?: (p: TradeProposal) => void;
 }
 
 export interface TradeProposal {
@@ -290,6 +298,21 @@ export class ProposalQueue {
       }
     }
     this.persist();
+
+    // Paper-only auto-trader: approve newly-filed proposals without human review.
+    // autoApprove() is true ONLY in paper mode (enforced in SettingsStore), and
+    // approve() in paper simulates the fill — so this can never place a real order.
+    if (this.deps.autoApprove?.() && this.deps.isPaper?.()) {
+      const acct = this.deps.tradeAccount?.() ?? "";
+      for (const p of added) {
+        try {
+          const done = await this.approve(p.id, acct);
+          if (done.status === "approved") this.deps.onTradeExecuted?.(done);
+        } catch (err) {
+          console.error(`[auto-approve] ${p.id}: ${err}`);
+        }
+      }
+    }
   }
 
   private validate(

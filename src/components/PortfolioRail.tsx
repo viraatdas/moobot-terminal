@@ -24,9 +24,6 @@ export function PortfolioRail({
   const asOf = pf?.asOf ? new Date(pf.asOf) : null;
   const hasTodayPnl = pf?.dayPnl !== undefined && Number.isFinite(pf.dayPnl);
   const todayPnl = Number(pf?.dayPnl ?? 0);
-  const dayStart = pf?.dayStartAt
-    ? new Date(pf.dayStartAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : "today";
   const stale = asOf ? Date.now() - asOf.getTime() > 45_000 : false;
   const clickable = Boolean(onOpenPortfolioHistory);
 
@@ -56,17 +53,12 @@ export function PortfolioRail({
           </div>
           {pf && (
             <>
-              <PnlLine amount={pf.pnl} pct={pf.pnlPercent} label="unrealized" />
               {hasTodayPnl ? (
-                <PnlLine
-                  amount={todayPnl}
-                  pct={pf?.dayPnlPercent ?? 0}
-                  label="today"
-                  suffix={<span className="ml-1 font-normal text-ink-faint">since {dayStart}</span>}
-                />
+                <PnlLine amount={todayPnl} pct={pf?.dayPnlPercent ?? 0} label="today" prominent />
               ) : (
-                <div className="mt-0.5 text-[12px] text-ink-faint">today: waiting for first snapshot</div>
+                <div className="mt-1 text-[12px] text-ink-faint">today: waiting for first snapshot</div>
               )}
+              <PnlLine amount={pf.pnl} pct={pf.pnlPercent} label="unrealized · all-time" />
             </>
           )}
         </button>
@@ -151,15 +143,22 @@ function PnlLine({
   pct,
   label,
   suffix,
+  prominent,
 }: {
   amount: number;
   pct: number;
   label: string;
   suffix?: ReactNode;
+  prominent?: boolean;
 }) {
   return (
-    <div className={`font-data mt-0.5 text-[12px] ${amount >= 0 ? "text-pos" : "text-neg"}`}>
-      {amount >= 0 ? "▲" : "▼"} {fmtMoney(Math.abs(amount))} ({fmtPct(pct)}) {label}
+    <div
+      className={`font-data ${prominent ? "mt-1 text-[16px] font-semibold" : "mt-0.5 text-[11px]"} ${
+        amount >= 0 ? "text-pos" : "text-neg"
+      }`}
+    >
+      {amount >= 0 ? "▲" : "▼"} {fmtMoney(Math.abs(amount))} ({fmtPct(pct)}){" "}
+      <span className="font-normal text-ink-faint">{label}</span>
       {suffix}
     </div>
   );

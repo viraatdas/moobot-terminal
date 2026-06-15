@@ -23,7 +23,7 @@ export interface StrategyRuntimeDeps {
   onActivity?: (tabId: string, text: string) => void;
 }
 
-const TICK_MS = 3 * 60_000;
+const TICK_MS = 5 * 60_000;
 const MIN_FIRE_GAP_MS = 6 * 60 * 60_000; // don't re-fire the same symbol/side within 6h
 const GATE_TIMEOUT_MS = 75_000;
 
