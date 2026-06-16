@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 
 /* ---------- nav ---------- */
@@ -15,6 +16,12 @@ export function Nav() {
           moobot<span className="not-italic text-moo">.</span>
         </a>
         <div className="flex items-center gap-6 text-sm text-faint">
+          <a
+            href="https://github.com/viraatdas/moobot-terminal"
+            className="hover:text-ink transition-colors hidden sm:block"
+          >
+            Source
+          </a>
           <a
             href="#install"
             className="rounded-full border border-hair px-4 py-1.5 text-ink hover:border-moo hover:text-moo transition-colors"
@@ -327,9 +334,16 @@ export function Principles() {
 /* ---------- install ---------- */
 
 export function Install() {
-  // The signed + notarized DMG is hosted on the site itself (the source repo is
-  // private). Drop the built dmg at site/public/Moobot-Terminal.dmg, or swap this
-  // href for a Vercel Blob URL.
+  const [copied, setCopied] = useState(false);
+  const cmd = "brew install --cask viraatdas/tap/moobot-terminal";
+
+  const copy = () => {
+    navigator.clipboard.writeText(cmd).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    });
+  };
+
   return (
     <section id="install" className="max-w-4xl mx-auto px-6 py-32 md:py-44 text-center">
       <motion.div {...reveal}>
@@ -337,18 +351,20 @@ export function Install() {
           Get the <span className="italic">desk</span>
           <span className="text-moo">.</span>
         </h2>
-        <a
-          href="/Moobot-Terminal.dmg"
-          download
-          className="group mt-12 inline-flex items-center justify-center gap-3 rounded-2xl border border-moo/50 bg-panel px-8 py-5 font-mono text-sm hover:bg-moo/10 transition-colors"
+        <button
+          onClick={copy}
+          className="group mt-12 w-full max-w-2xl mx-auto flex items-center justify-between gap-4 rounded-2xl border border-hair bg-panel px-6 py-5 font-mono text-xs md:text-sm text-left cursor-pointer hover:border-moo/50 transition-colors"
         >
-          <span className="text-ink">Download for macOS</span>
-          <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-dim group-hover:text-moo transition-colors">
-            .dmg · Apple Silicon
+          <span>
+            <span className="text-dim select-none">$ </span>
+            <span className="text-ink">{cmd}</span>
           </span>
-        </a>
+          <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.2em] text-dim group-hover:text-moo transition-colors">
+            {copied ? "copied" : "copy"}
+          </span>
+        </button>
         <p className="text-dim text-sm mt-8 leading-relaxed">
-          Signed &amp; notarized · requires{" "}
+          Apple Silicon · requires{" "}
           <a
             href="https://claude.com/claude-code"
             className="text-faint underline underline-offset-4 hover:text-ink transition-colors"
@@ -378,6 +394,13 @@ export function Footer() {
           built by{" "}
           <a href="https://viraat.dev" className="text-faint hover:text-ink transition-colors">
             Viraat Das
+          </a>{" "}
+          ·{" "}
+          <a
+            href="https://github.com/viraatdas/moobot-terminal"
+            className="text-faint hover:text-ink transition-colors"
+          >
+            source
           </a>
         </span>
       </div>
