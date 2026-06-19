@@ -122,7 +122,7 @@ export function PortfolioRail({
           </>
         )}
         {!snapshot && robinhoodConnected && (
-          <div className="px-4 py-6 text-center text-[12px] text-ink-faint">Loading positions…</div>
+          <div className="px-4 py-6 text-center text-[12px] text-ink-faint">Loading positions...</div>
         )}
       </div>
     </div>

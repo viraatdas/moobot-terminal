@@ -26,7 +26,7 @@ interface Fill {
 }
 
 interface AutoTradeStatus {
-  /** THE single posture word from the backend — never re-derived here. */
+  /** THE single posture word from the backend, never re-derived here. */
   status?: StatusWord;
   config: AutoTradeConfig;
   paper: boolean;
@@ -99,7 +99,7 @@ export function AutoTraderPanel() {
   // ONE posture word from the backend → label + tone. No re-derivation, so this can
   // never disagree with the proposals rail or the title bar.
   const meta = autoTradeStatusMeta(status?.status);
-  const realArmed = meta.real; // real money in play — gates confirms + go-live/stand-down
+  const realArmed = meta.real; // real money in play, gates confirms + go-live/stand-down
   const autoApprove = cfg?.autoApprove !== false; // false = Manual (proposals wait for approve)
   const scopeAll = cfg?.approveScope === "all";
 
@@ -114,14 +114,14 @@ export function AutoTraderPanel() {
   };
 
   // ONE confirm gate for anything that could place REAL orders. A no-op (returns true)
-  // in paper or when not real-armed — paper short-circuits at the broker regardless.
+  // in paper or when not real-armed. Paper short-circuits at the broker regardless.
   const confirmRealMoney = (action: string): boolean =>
     !realArmed ||
     window.confirm(
       `${action}\n\nThis can place REAL orders on agentic account ${cfg?.account}, bounded only by your hard caps:\n` +
         `  • $${cfg?.maxPerTrade} max per trade\n` +
         `  • ${cfg?.maxPerDay} trades per day\n` +
-        `  • auto-halt at −$${cfg?.dailyLossKill} on the day.`,
+        `  • auto-halt at -$${cfg?.dailyLossKill} on the day.`,
     );
 
   const applyPatch = (patch: Record<string, unknown>) => {
@@ -148,7 +148,7 @@ export function AutoTraderPanel() {
   // Auto-approve scope (Advanced): just this strategy, or every pending proposal.
   const setScope = (scope: "strategy" | "all") => {
     if (!cfg) return;
-    if (scope === "all" && !confirmRealMoney("Auto-approve EVERY pending proposal — research briefs AND manual tickets?")) return;
+    if (scope === "all" && !confirmRealMoney("Auto-approve EVERY pending proposal, research briefs AND manual tickets?")) return;
     applyPatch({ approveScope: scope });
   };
 
@@ -173,13 +173,13 @@ export function AutoTraderPanel() {
       .finally(() => setBusy(false));
   };
 
-  // GO LIVE — the one deliberate flip to real money. Strong, explicit confirm.
+  // GO LIVE, the one deliberate flip to real money. Strong, explicit confirm.
   const goLive = () => {
     if (!cfg) return;
     const ok = window.confirm(
       `GO LIVE WITH REAL MONEY?\n\n` +
         `This places REAL orders on agentic account ${cfg.account} the moment a pullback trips.\n\n` +
-        `The strategy is UNVERIFIED — you've accepted it's likely -EV. Your only protection is the hard caps:\n` +
+        `The strategy is UNVERIFIED. You've accepted it's likely -EV. Your only protection is the hard caps:\n` +
         `  • $${cfg.maxPerTrade} max per trade\n` +
         `  • ${cfg.maxPerDay} trades max per day\n` +
         `  • auto-halts if the account is down $${cfg.dailyLossKill} on the day\n\n` +
@@ -195,7 +195,7 @@ export function AutoTraderPanel() {
       .finally(() => setBusy(false));
   };
 
-  // RESUME — clear an account-setup block after the user has resolved it.
+  // RESUME, clear an account-setup block after the user has resolved it.
   const resumeBlock = () => {
     setBusy(true);
     setErr(null);
@@ -206,7 +206,7 @@ export function AutoTraderPanel() {
       .finally(() => setBusy(false));
   };
 
-  // STAND DOWN — back to safe paper mode.
+  // STAND DOWN, back to safe paper mode.
   const standDown = () => {
     setBusy(true);
     setErr(null);
@@ -271,7 +271,7 @@ export function AutoTraderPanel() {
               <button
                 onClick={goLive}
                 disabled={busy}
-                title="Flip to REAL money on the agentic account (unverified, -EV — caps are the only guardrail)"
+                title="Flip to REAL money on the agentic account (unverified, -EV, caps are the only guardrail)"
                 className="flex h-7 items-center gap-1.5 rounded-sm border border-neg/50 bg-neg-dim px-2.5 text-[10px] font-semibold tracking-[0.08em] text-neg uppercase hover:bg-neg/25 disabled:opacity-50"
               >
                 {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
@@ -281,7 +281,7 @@ export function AutoTraderPanel() {
             <button
               onClick={toggle}
               disabled={busy}
-              title={enabled ? "Auto-trader is ON — click to pause" : "Auto-trader is OFF — click to power on"}
+              title={enabled ? "Auto-trader is ON, click to pause" : "Auto-trader is OFF, click to power on"}
               className={`flex h-7 items-center gap-1.5 rounded-sm border px-3 text-[10px] font-semibold tracking-[0.08em] uppercase disabled:opacity-50 ${
                 enabled
                   ? "border-amber/40 bg-amber-dim text-amber hover:bg-amber/25"
@@ -299,8 +299,8 @@ export function AutoTraderPanel() {
         <div className="flex flex-col items-start gap-3 px-4 py-4">
           <p className="max-w-md text-[12px] leading-snug text-ink-faint">
             Spin up an autonomous mean-reversion trader on the agentic $1k. It runs in{" "}
-            <span className="text-amber">paper</span> first — fires every few minutes within hard caps, auto-fills,
-            and pings you — so the rails are proven before any real order.
+            <span className="text-amber">paper</span> first. It fires every few minutes within hard caps, auto-fills,
+            and pings you, so the rails are proven before any real order.
           </p>
           <button
             onClick={setup}
@@ -319,7 +319,7 @@ export function AutoTraderPanel() {
               <div className="flex items-center gap-1.5">
                 <ShieldAlert className="h-3.5 w-3.5 text-amber" />
                 <span className="text-[10px] font-semibold tracking-[0.12em] text-amber uppercase">
-                  Action needed — auto-trade paused
+                  Action needed: auto-trade paused
                 </span>
               </div>
               <div className="mt-1 text-[11px] leading-snug text-ink-dim">{status.block.reason}.</div>
@@ -340,7 +340,7 @@ export function AutoTraderPanel() {
                   className="flex h-7 items-center gap-1.5 rounded-sm border border-hairline px-2.5 text-[10px] font-semibold tracking-[0.08em] text-ink-dim uppercase hover:border-amber/40 hover:text-amber disabled:opacity-50"
                 >
                   {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                  I've done it — resume
+                  I've done it, resume
                 </button>
               </div>
             </div>
@@ -360,7 +360,7 @@ export function AutoTraderPanel() {
               <div className="text-[9px] font-semibold tracking-[0.14em] text-ink-faint uppercase">Mode</div>
               <div className="mt-0.5 text-[10px] leading-snug text-ink-faint">
                 {!autoApprove
-                  ? "Files proposals — you approve each trade."
+                  ? "Files proposals. You approve each trade."
                   : scopeAll
                     ? "Auto-approves every pending proposal, within caps."
                     : "Auto-approves this strategy's proposals, within caps."}
@@ -377,7 +377,7 @@ export function AutoTraderPanel() {
             </select>
           </div>
 
-          {/* kill-switch meter — only gates real money; inactive in paper */}
+          {/* kill-switch meter, only gates real money; inactive in paper */}
           <div className="rounded-sm border border-hairline bg-bg px-3 py-2">
             <div className="mb-1.5 flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-[9px] font-semibold tracking-[0.14em] uppercase">
@@ -421,7 +421,7 @@ export function AutoTraderPanel() {
               <div>
                 <div className="text-[9px] font-semibold tracking-[0.14em] text-ink-faint uppercase">Rule</div>
                 <div className="mt-0.5 text-[11px] leading-snug text-ink-dim">
-                  Buy uptrend pullbacks — price above its 200-day trend but dipped below the 5-day average; exit on the
+                  Buy uptrend pullbacks: price above its 200-day trend but dipped below the 5-day average; exit on the
                   bounce back or an 8% trailing stop.
                 </div>
                 {status && status.universe && status.universe.length > 0 && (
@@ -472,7 +472,7 @@ export function AutoTraderPanel() {
                 <button
                   onClick={runNow}
                   disabled={busy || !enabled}
-                  title={realArmed ? "Evaluate now — may place REAL orders" : "Evaluate the strategy right now"}
+                  title={realArmed ? "Evaluate now, may place REAL orders" : "Evaluate the strategy right now"}
                   className="flex h-7 items-center gap-1.5 rounded-sm border border-hairline px-2.5 text-[10px] font-semibold tracking-[0.08em] text-ink-dim uppercase hover:border-amber/40 hover:text-amber disabled:opacity-40"
                 >
                   {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
@@ -506,7 +506,7 @@ export function AutoTraderPanel() {
                       </span>
                       <span className="font-data font-semibold text-ink">{f.symbol}</span>
                       <span className="font-data text-ink-dim">
-                        {ex?.quantity ?? f.quantity} @ ${ex?.fillPrice ?? "—"}
+                        {ex?.quantity ?? f.quantity} @ ${ex?.fillPrice ?? "-"}
                       </span>
                       <span className="ml-auto flex items-center gap-2 text-ink-faint">
                         {ex ? (
@@ -528,7 +528,7 @@ export function AutoTraderPanel() {
               </div>
             ) : (
               <div className="rounded-sm border border-dashed border-hairline bg-bg px-2.5 py-3 text-center text-[11px] text-ink-faint">
-                {!enabled ? "Paused." : paper ? "Paper — waiting for the next pullback…" : "Armed — waiting for the next pullback…"}
+                {!enabled ? "Paused." : paper ? "Paper, waiting for the next pullback..." : "Armed, waiting for the next pullback..."}
               </div>
             )}
           </div>

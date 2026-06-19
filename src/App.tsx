@@ -121,7 +121,7 @@ export default function App() {
   const [showTrackRecord, setShowTrackRecord] = useState(false);
   const [paperMode, setPaperMode] = useState(false);
   const [eventTriggers, setEventTriggers] = useState(true);
-  // Which strategy tab the auto-trader runs on + whether it's armed — so closing that
+  // Which strategy tab the auto-trader runs on + whether it's armed, so closing that
   // tab warns "this is running, it'll stop" instead of the generic delete prompt.
   const [autoTradeCfg, setAutoTradeCfg] = useState<{
     strategyTabId: string | null;
@@ -464,8 +464,11 @@ export default function App() {
       engine: "claude",
       autoRun: false,
     });
-    await refreshResearch();
+    setTabs((current) =>
+      current.some((candidate) => candidate.id === tab.id) ? current : [...current, tab],
+    );
     activateLensId(tab.id);
+    void refreshResearch();
   }, [activateLensId, refreshResearch]);
 
   const createLensTemplate = useCallback(
@@ -638,7 +641,7 @@ export default function App() {
       if (closingLensIdRef.current === tab.id) return true;
       const label = tab.topic || LENS_META[tab.type]?.label || "lens";
       // Escalating warning so the user is never surprised that closing a tab stops
-      // something live — especially the armed auto-trader. Uses the in-app dialog (NOT
+      // something live, especially the armed auto-trader. Uses the in-app dialog (NOT
       // window.confirm, which is unreliable in the Tauri webview and silently cancels).
       const isAutoTrader = autoTradeCfg?.enabled === true && autoTradeCfg.strategyTabId === tab.id;
       const isStrategy = tab.type === "strategy";
@@ -652,7 +655,7 @@ export default function App() {
         danger = true;
         body =
           `The auto-trader is RUNNING on this tab (${mode}).\n\n` +
-          `Closing it deletes the strategy and STOPS autonomous trading — no new trades will be placed. ` +
+          `Closing it deletes the strategy and STOPS autonomous trading. No new trades will be placed. ` +
           `Orders already placed are unaffected.`;
       } else if (isStrategy) {
         title = "Close strategy?";
@@ -744,7 +747,7 @@ export default function App() {
         return goTo(deck[deck.length - 1]);
       }
       if (command.startsWith("tab-")) {
-        // tab-N maps to deck[N-1] (tab-1 -> cockpit, tab-2 -> first lens, …).
+        // tab-N maps to deck[N-1] (tab-1 -> cockpit, tab-2 -> first lens, etc.).
         // Out-of-range N yields undefined -> goTo returns false, as before.
         return goTo(deck[Number(command.slice(4)) - 1]);
       }

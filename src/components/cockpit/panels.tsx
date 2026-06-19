@@ -18,6 +18,7 @@ import {
   type Position,
   type RiskSummary,
 } from "../../lib/client";
+import { deAiText } from "../../lib/text";
 import {
   cleanSymbol,
   exposureAmount,
@@ -79,7 +80,7 @@ export function Kpi({
     >
       <div className="text-[9px] tracking-[0.14em] text-ink-faint uppercase">{label}</div>
       <div className={`font-data mt-1 truncate text-[15px] font-semibold ${toneClass}`}>{value}</div>
-      {detail && <div className="mt-1 truncate text-[10px] text-ink-faint">{detail}</div>}
+      {detail && <div className="mt-1 truncate text-[10px] text-ink-faint">{deAiText(detail)}</div>}
     </button>
   );
 }
@@ -160,8 +161,8 @@ export function RiskPanel({
             ))}
             {risk.warnings.slice(0, 3).map((w) => (
               <div key={w.title} className={`rounded-sm border px-3 py-2 text-[11px] ${severityClass(w.severity)}`}>
-                <div className="font-semibold">{w.title}</div>
-                <div className="mt-0.5 leading-snug opacity-80">{w.detail}</div>
+                <div className="font-semibold">{deAiText(w.title)}</div>
+                <div className="mt-0.5 leading-snug opacity-80">{deAiText(w.detail)}</div>
               </div>
             ))}
           </div>
@@ -264,7 +265,7 @@ export function CorrelationPanel({
             ))}
             {lattice?.insight && (
               <div className="rounded-sm border border-amber/25 bg-amber-dim/35 px-3 py-2 text-[11px] leading-snug text-amber">
-                {String(lattice.insight)}
+                {deAiText(lattice.insight)}
               </div>
             )}
           </div>
@@ -312,14 +313,14 @@ export function EventsPanel({ events, onSymbolChange }: { events: MarketEvent[];
                         rel="noreferrer"
                         className="inline-flex items-center gap-1.5 truncate !text-inherit !no-underline hover:!underline"
                       >
-                        {event.title}
+                        {deAiText(event.title)}
                         <ArrowUpRight className="h-3 w-3" />
                       </a>
                     ) : (
-                      event.title
+                      deAiText(event.title)
                     )}
                   </div>
-                  <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug opacity-80">{event.detail}</div>
+                  <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug opacity-80">{deAiText(event.detail)}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     {event.symbols.slice(0, 4).map((symbol) => (
                       <button
@@ -447,7 +448,7 @@ export function ScannerPanel({
 export function EmptyPanel({ text }: { text: string }) {
   return (
     <div className="grid min-h-28 place-items-center rounded-sm border border-dashed border-hairline bg-bg/60 px-4 py-6 text-center text-[12px] text-ink-faint">
-      {text}
+      {deAiText(text)}
     </div>
   );
 }

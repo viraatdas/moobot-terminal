@@ -145,7 +145,7 @@ export function ChainViewer({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {err && <div className="p-4 text-[12px] text-neg break-words">{err}</div>}
-          {busy && <div className="p-4 text-[12px] text-ink-faint">Loading…</div>}
+          {busy && <div className="p-4 text-[12px] text-ink-faint">Loading...</div>}
           {!busy && strikes.length > 0 && (
             <table className="font-data w-full text-[11px]">
               <thead className="sticky top-0 bg-panel text-[9px] uppercase tracking-wider text-ink-faint">

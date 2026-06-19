@@ -1,6 +1,6 @@
 // Low-level SVG chart geometry helpers shared across price/equity line surfaces
 // (SymbolChart, PortfolioPerformanceModal, StrategySurface's EquityChart). These
-// are the truly-identical primitives only — each surface keeps its OWN domain /
+// are the truly-identical primitives only. Each surface keeps its OWN domain /
 // bounds policy (SymbolChart uses a raw low/high domain with no padding, while
 // the equity surfaces pad ~8%) and its own crosshair/overlay JSX.
 

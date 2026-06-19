@@ -209,7 +209,7 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
   const h = 285;
   // Price domain (min-of-lows / max-of-highs) computed ONCE and fed to both the
   // line path and the hover/selection dot placement, so they can never drift.
-  // Raw low/high domain with no padding — keep it that way (see lib/charts).
+  // Raw low/high domain with no padding, keep it that way (see lib/charts).
   const priceBounds = useMemo(() => {
     if (candles.length === 0) return { min: 0, max: 1 };
     return {

@@ -27,29 +27,29 @@ interface VenueMeta {
 }
 
 // Drives both the form and the help text. NOTE: secrets are POSTed to the local
-// sidecar (127.0.0.1), written 0600 server-side, and NEVER echoed back — the panel
+// sidecar (127.0.0.1), written 0600 server-side, and NEVER echoed back. The panel
 // only ever shows the redacted status.
 const VENUES: VenueMeta[] = [
   {
     key: "kalshi",
     label: "Kalshi",
     blurb: "US-regulated event contracts. Trade with an API Key ID + RSA private key.",
-    obtain: "kalshi.com → Account → API Keys → Create. The RSA private key is shown ONCE — paste it here. Use the demo env (demo.kalshi.co) first.",
+    obtain: "kalshi.com > Account > API Keys > Create. The RSA private key is shown once. Paste it here. Use the demo env (demo.kalshi.co) first.",
     fields: [
       { name: "env", label: "Environment", type: "select", options: ["demo", "prod"] },
       { name: "keyId", label: "API Key ID", type: "text", placeholder: "UUID from your Kalshi API Keys page" },
-      { name: "privateKeyPem", label: "RSA private key (PEM)", type: "textarea", placeholder: "-----BEGIN RSA PRIVATE KEY-----\n…" },
+      { name: "privateKeyPem", label: "RSA private key (PEM)", type: "textarea", placeholder: "-----BEGIN RSA PRIVATE KEY-----\n..." },
     ],
   },
   {
     key: "hyperliquid",
     label: "Hyperliquid",
-    blurb: "Perps DEX. Use an AGENT (API) wallet key — it can trade but never withdraw.",
+    blurb: "Perps DEX. Use an AGENT (API) wallet key. It can trade but never withdraw.",
     obtain: "app.hyperliquid.xyz/API → approve an agent wallet (sign with your master wallet). Paste the agent key + your master 0x address. Start on testnet.",
     fields: [
       { name: "network", label: "Network", type: "select", options: ["testnet", "mainnet"] },
-      { name: "accountAddress", label: "Master account address", type: "text", placeholder: "0x… (your main wallet)" },
-      { name: "agentPrivateKey", label: "Agent wallet private key", type: "password", placeholder: "0x… (64 hex)" },
+      { name: "accountAddress", label: "Master account address", type: "text", placeholder: "0x... (your main wallet)" },
+      { name: "agentPrivateKey", label: "Agent wallet private key", type: "password", placeholder: "0x... (64 hex)" },
     ],
   },
   {
@@ -58,8 +58,8 @@ const VENUES: VenueMeta[] = [
     blurb: "Polygon prediction markets. Use a DEDICATED bot wallet, not your personal one.",
     obtain: "Generate a fresh Polygon EOA (e.g. `cast wallet new`), fund pUSD/POL, and paste its private key. CLOB API creds are derived in-code.",
     fields: [
-      { name: "privateKey", label: "Polygon wallet private key", type: "password", placeholder: "0x… (64 hex)" },
-      { name: "funder", label: "Funder address (optional)", type: "text", placeholder: "0x… proxy/funder, if used" },
+      { name: "privateKey", label: "Polygon wallet private key", type: "password", placeholder: "0x... (64 hex)" },
+      { name: "funder", label: "Funder address (optional)", type: "text", placeholder: "0x... proxy/funder, if used" },
     ],
   },
 ];
@@ -112,7 +112,7 @@ export function ConnectionsModal({ onClose, paperMode }: { onClose: () => void; 
             Keys are stored locally (owner-only files), never shown again, and never leave this Mac. Every order still
             routes through your approval + paper-mode gate.
           </p>
-          {!status && <div className="py-6 text-center text-[12px] text-ink-faint">Loading…</div>}
+          {!status && <div className="py-6 text-center text-[12px] text-ink-faint">Loading...</div>}
           {status &&
             VENUES.map((v) => (
               <VenueCard

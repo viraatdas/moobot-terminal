@@ -274,7 +274,7 @@ function SettingsMenu({
             className="flex w-full items-center gap-2.5 border-t border-hairline px-3 py-2.5 text-left hover:bg-panel-2"
           >
             <Wifi className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
-            <span className="text-[12px] font-medium text-ink">Connection…</span>
+            <span className="text-[12px] font-medium text-ink">Connection...</span>
           </button>
 
           <button
@@ -287,7 +287,7 @@ function SettingsMenu({
             className="flex w-full items-center gap-2.5 border-t border-hairline px-3 py-2.5 text-left hover:bg-panel-2"
           >
             <Link2 className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
-            <span className="text-[12px] font-medium text-ink">Market connections…</span>
+            <span className="text-[12px] font-medium text-ink">Market connections...</span>
           </button>
 
           <button
@@ -345,7 +345,7 @@ export function TitleBar({
       <div className="flex items-center gap-4" data-tauri-drag-region>
         <span
           className="flex items-center gap-1.5"
-          title={`Engine: ${cloud ? "cloud" : "local"} — ${sidecarUp ? "connected" : "disconnected"}`}
+          title={`Engine: ${cloud ? "cloud" : "local"}, ${sidecarUp ? "connected" : "disconnected"}`}
         >
           <span className={`h-1.5 w-1.5 rounded-full ${sidecarUp ? "bg-pos" : "bg-neg pulse-dot"}`} />
           <span className="text-[10px] tracking-[0.14em] uppercase text-ink-faint">
@@ -369,8 +369,8 @@ export function TitleBar({
         onClick={onTogglePaper}
         title={
           paperMode
-            ? "Paper mode ON — approvals are simulated, nothing is sent to Robinhood. Click to go live."
-            : "Live mode — approvals place real orders. Click to switch to paper (dry-run)."
+            ? "Paper mode ON. Approvals are simulated, nothing is sent to Robinhood. Click to go live."
+            : "Live mode. Approvals place real orders. Click to switch to paper (dry-run)."
         }
         className={`flex h-7 items-center gap-1.5 rounded-sm border px-2 text-[10px] font-semibold tracking-[0.12em] uppercase ${
           paperMode
@@ -403,7 +403,7 @@ export function TitleBar({
           onClick={onConnect}
           className="rounded-sm border border-amber/40 bg-amber-dim px-3 py-1 text-[11px] font-semibold tracking-wide text-amber hover:bg-amber/25"
         >
-          {authUrl ? "Waiting for browser…" : "Connect Robinhood"}
+          {authUrl ? "Waiting for browser..." : "Connect Robinhood"}
         </button>
       )}
 

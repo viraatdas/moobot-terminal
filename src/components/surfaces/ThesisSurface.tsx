@@ -1,5 +1,6 @@
 import { fmtMoney } from "../../lib/client";
 import { Cashtags } from "../../lib/cashtags";
+import { deAiText } from "../../lib/text";
 import { Empty, SectionLabel, Ticker, sourceLabel } from "./_shared";
 
 /* ---------- Thesis: belief vs. book + sourced ideas ---------- */
@@ -93,7 +94,7 @@ export function ThesisSurface({ data }: { data: any }) {
                     {fit}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-dim">
-                    {h.reason}
+                    {deAiText(h.reason)}
                   </span>
                   <span className="font-data shrink-0 text-[10px] text-ink-faint">
                     {fmtMoney(h.value)}
@@ -170,7 +171,7 @@ export function ThesisSurface({ data }: { data: any }) {
                   <span
                     className={`shrink-0 text-[14px] leading-tight ${against ? "text-neg" : "text-pos"}`}
                   >
-                    {against ? "−" : "+"}
+                    {against ? "-" : "+"}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="text-[11.5px] leading-snug text-ink-dim">

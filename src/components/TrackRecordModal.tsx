@@ -106,7 +106,7 @@ export function TrackRecordModal({ onClose }: Props) {
             <History className="h-3.5 w-3.5" /> Decision log
           </button>
           <span className="ml-auto text-[10px] text-ink-faint">
-            marks every proposal to live quotes — whether or not you acted
+            marks every proposal to live quotes, whether or not you acted
           </span>
         </div>
 

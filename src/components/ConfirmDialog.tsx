@@ -11,7 +11,7 @@ export interface ConfirmRequest {
 
 /**
  * In-app confirmation modal. Replaces window.confirm(), which is unreliable inside the
- * Tauri (WKWebView) shell — there it can return falsy and silently cancel the action
+ * Tauri (WKWebView) shell. There it can return falsy and silently cancel the action
  * (that's why Cmd+W "didn't close" tabs). Pure React, so it always works in the webview.
  */
 export function ConfirmDialog({

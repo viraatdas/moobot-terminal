@@ -15,6 +15,7 @@ import {
   type VerificationReport,
 } from "../lib/client";
 import { signTone } from "../lib/format";
+import { deAiText } from "../lib/text";
 
 interface Props {
   tabId: string;
@@ -78,7 +79,7 @@ function EquityChart({ curve, splitDate }: { curve: EquityPoint[]; splitDate: st
   // Guard the empty curve: Math.min/max of [] are ±Infinity and the y-scale below
   // collapses to NaN, silently rendering nothing. Show an explicit empty state.
   if (curve.length === 0) {
-    return <div className="text-[12px] text-ink-faint py-10 text-center">No equity curve — the strategy executed no trades over this window.</div>;
+    return <div className="text-[12px] text-ink-faint py-10 text-center">No equity curve. The strategy executed no trades over this window.</div>;
   }
   const equities = curve.map((p) => p.equity);
   const min = Math.min(...equities);
@@ -263,7 +264,7 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
     setLiveBusy(true);
     setVerifyError(null);
     try {
-      // Only reflect "live" AFTER the server gate confirms — never optimistically
+      // Only reflect "live" AFTER the server gate confirms, never optimistically.
       // show a money-path state the TRUST_GATE may have rejected.
       await client.request("strategy.setLive", { tabId, live: next });
       setLive(next);
@@ -284,7 +285,7 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-center text-[13px] text-ink-faint">
         <div className="max-w-md">
-          No compiled rules yet. Describe your strategy in the topic/notes and run the agent — it will translate your
+          No compiled rules yet. Describe your strategy in the topic/notes and run the agent. It will translate your
           intent into mechanical, backtestable rules here.
         </div>
       </div>
@@ -293,10 +294,10 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-4">
-      {/* Verification verdict — certifies the RULES, not the idea. The single go/no-go line. */}
+      {/* Verification verdict: certifies the RULES, not the idea. The single go/no-go line. */}
       <TrustBadge grade={verification?.grade ?? "untested"} stale={stale} report={verification} />
 
-      {/* Honesty banner — collapsed; the verdict above is the headline */}
+      {/* Honesty banner: collapsed; the verdict above is the headline */}
       <details className="group mb-3 rounded-sm border border-amber/25 bg-amber-dim/20">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-amber">
           <ShieldQuestion className="h-4 w-4 shrink-0" />
@@ -305,7 +306,7 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
         </summary>
         <div className="px-3 pb-2.5 pl-9 text-[11px] leading-snug text-amber/90">
           A backtest replays these mechanical rules on past prices. It <strong>cannot</strong> undo the hindsight baked
-          into the thesis itself — the model that wrote these rules already knew how the past played out. Treat the{" "}
+          into the thesis itself. The model that wrote these rules already knew how the past played out. Treat the{" "}
           <strong>out-of-sample</strong> column as the real test; a big in→out drop-off means overfitting. The live LLM
           gate never runs in the backtest.
         </div>
@@ -352,7 +353,7 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
           className="flex items-center gap-1.5 rounded-sm border border-hairline bg-panel-2 px-3 py-1.5 text-[11px] font-semibold text-ink-dim hover:border-amber/40 hover:text-ink disabled:opacity-40"
         >
           {btBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
-          {btBusy ? "Backtesting…" : "Backtest"}
+          {btBusy ? "Backtesting..." : "Backtest"}
         </button>
         <button
           onClick={runVerify}
@@ -360,7 +361,7 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
           className="flex items-center gap-1.5 rounded-sm border border-hairline bg-panel-2 px-3 py-1.5 text-[11px] font-semibold text-ink-dim hover:border-amber/40 hover:text-ink disabled:opacity-40"
         >
           {verifyBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-          {verifyBusy ? "Verifying…" : stale && verification ? "Re-verify" : "Verify"}
+          {verifyBusy ? "Verifying..." : stale && verification ? "Re-verify" : "Verify"}
         </button>
         <button
           onClick={toggleLive}
@@ -370,15 +371,15 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
           }`}
         >
           <Radio className="h-3.5 w-3.5" />
-          {live ? "Live — filing proposals" : "Go live"}
+          {live ? "Live, filing proposals" : "Go live"}
         </button>
       </div>
       <div className="mb-3 text-[10px] text-ink-faint">
         {verifyBusy
-          ? "running the robustness battery — walk-forward, parameter nudges, cost stress, luck test…"
+          ? "running the robustness battery: walk-forward, parameter nudges, cost stress, luck test..."
           : verification
-            ? `last verified ${new Date(verification.verifiedAt).toLocaleString()}${stale ? " · rules changed since — re-verify before going live" : ""}`
-            : "not verified — real-money go-live is blocked until a strategy holds up out-of-sample (paper mode is always allowed)"}
+            ? `last verified ${new Date(verification.verifiedAt).toLocaleString()}${stale ? " · rules changed since, re-verify before going live" : ""}`
+            : "not verified. Real-money go-live is blocked until a strategy holds up out-of-sample (paper mode is always allowed)"}
       </div>
 
       {(btError || verifyError) && (
@@ -410,7 +411,7 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
             <div className="mb-2 text-[10px] text-ink-faint">
               in→out return drop-off:{" "}
               <span className={inOut.drop > 20 ? "text-neg" : "text-ink-dim"}>{inOut.drop.toFixed(1)} pts</span>
-              {inOut.drop > 20 ? " — likely overfit" : " — holds up out-of-sample"} · split {result.splitDate ?? "n/a"} ·{" "}
+              {inOut.drop > 20 ? ", likely overfit" : ", holds up out-of-sample"} · split {result.splitDate ?? "n/a"} ·{" "}
               {result.bars} bars · {result.symbols.join(", ")}
             </div>
           )}
@@ -423,7 +424,7 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
       {markdown && (
         <details className="mb-2 rounded-sm border border-hairline bg-panel px-3 py-2 text-[11px] text-ink-dim">
           <summary className="cursor-pointer text-[10px] tracking-[0.14em] text-ink-faint uppercase">Plain-English plan</summary>
-          <div className="mt-2 whitespace-pre-wrap select-text">{markdown}</div>
+          <div className="mt-2 whitespace-pre-wrap select-text">{deAiText(markdown)}</div>
         </details>
       )}
     </div>
@@ -441,9 +442,9 @@ function RuleRow({ label, text, toneCls }: { label: string; text: string; toneCl
 
 const GRADE_META: Record<Grade, { label: string; sub: string; cls: string; Icon: typeof ShieldCheck }> = {
   untested: { label: "Untested", sub: "Run verification to grade these rules", cls: "border-hairline bg-panel-2 text-ink-faint", Icon: ShieldQuestion },
-  fragile: { label: "Fragile", sub: "Did not clear the bar — trial in paper only, do not risk real capital", cls: "border-amber/40 bg-amber-dim/30 text-amber", Icon: ShieldAlert },
-  "holds-up": { label: "Holds up out-of-sample", sub: "Past-data robustness only — verifies the rules, NOT the idea. Not a profit promise.", cls: "border-pos/50 bg-pos-dim text-pos", Icon: ShieldCheck },
-  diverged: { label: "Diverged", sub: "Live results broke from the backtest — real capital re-gated", cls: "border-neg/50 bg-neg-dim text-neg", Icon: ShieldAlert },
+  fragile: { label: "Fragile", sub: "Did not clear the bar. Trial in paper only, do not risk real capital", cls: "border-amber/40 bg-amber-dim/30 text-amber", Icon: ShieldAlert },
+  "holds-up": { label: "Holds up out-of-sample", sub: "Past-data robustness only. Verifies the rules, NOT the idea. Not a profit promise.", cls: "border-pos/50 bg-pos-dim text-pos", Icon: ShieldCheck },
+  diverged: { label: "Diverged", sub: "Live results broke from the backtest. Real capital re-gated", cls: "border-neg/50 bg-neg-dim text-neg", Icon: ShieldAlert },
 };
 
 function TrustBadge({ grade, stale, report }: { grade: Grade; stale: boolean; report: VerificationReport | null }) {
@@ -466,7 +467,7 @@ function TrustBadge({ grade, stale, report }: { grade: Grade; stale: boolean; re
         <span className="font-semibold">
           {grade === "holds-up" && !stale ? "✓ Cleared for real-money go-live. " : "✗ Paper only. "}
         </span>
-        {stale && report ? "Rules changed since this verdict — re-verify before relying on it." : m.sub}
+        {stale && report ? "Rules changed since this verdict. Re-verify before relying on it." : m.sub}
       </div>
     </div>
   );
@@ -491,9 +492,9 @@ function ReportCard({ report }: { report: VerificationReport }) {
           <details key={c.id} className="group px-3 py-1.5">
             <summary className="flex cursor-pointer list-none items-start gap-2 text-[11px] leading-snug">
               <CheckGlyph status={c.status} />
-              <span className="text-ink-dim">{c.headline}</span>
+              <span className="text-ink-dim">{deAiText(c.headline)}</span>
             </summary>
-            <div className="mt-1 pl-[22px] font-data text-[10px] text-ink-faint select-text">{c.detail}</div>
+            <div className="mt-1 pl-[22px] font-data text-[10px] text-ink-faint select-text">{deAiText(c.detail)}</div>
           </details>
         ))}
       </div>
@@ -512,7 +513,7 @@ function LiveStrip({ lc }: { lc: LiveConsistency }) {
         <span className="text-[12px] font-semibold">{label}</span>
         <span className="ml-auto font-data text-[9px] opacity-70">{lc.n} settled live trades</span>
       </div>
-      <div className="mt-0.5 pl-6 text-[10px] leading-snug opacity-80">{lc.detail}</div>
+      <div className="mt-0.5 pl-6 text-[10px] leading-snug opacity-80">{deAiText(lc.detail)}</div>
     </div>
   );
 }

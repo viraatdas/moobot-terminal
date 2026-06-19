@@ -30,6 +30,7 @@ import {
 import type { FeedLine } from "../App";
 import { LensSurface } from "./LensSurface";
 import { onCashtagClick } from "../lib/cashtags";
+import { deAiMarkdown, deAiText } from "../lib/text";
 
 interface PanelItem {
   label?: string;
@@ -198,7 +199,7 @@ export function ResearchBoard({
   const latestActivity = active ? (feed.find((f) => f.tabId === active.id)?.text ?? null) : null;
 
   return (
-    <div className="flex min-h-0 flex-col bg-bg">
+    <div className="flex min-h-0 flex-1 flex-col bg-bg">
       {/* tab strip */}
       {showTabStrip && (
         <div className="flex h-10 shrink-0 items-stretch gap-px overflow-x-auto border-b border-hairline bg-panel">
@@ -239,7 +240,7 @@ export function ResearchBoard({
             title="Create or refresh Watch + Portfolio + Lattice"
           >
             <Sparkles className="h-3.5 w-3.5" />
-            {autoBusy ? "…" : "Auto"}
+            {autoBusy ? "..." : "Auto"}
           </button>
           <div className="flex-1" />
           {tabs.length > 0 && (
@@ -288,7 +289,7 @@ export function ResearchBoard({
               disabled={autoBusy}
               className="rounded-sm border border-amber/40 bg-amber-dim px-4 py-1.5 text-[12px] font-semibold text-amber hover:bg-amber/25 disabled:opacity-50"
             >
-              {autoBusy ? "Setting up…" : "✦ Auto-setup my cockpit"}
+              {autoBusy ? "Setting up..." : "✦ Auto-setup my cockpit"}
             </button>
             <button
               onClick={() => {
@@ -328,7 +329,7 @@ export function ResearchBoard({
                 </div>
               ) : findings.state?.headline ? (
                 <div className="mt-0.5 truncate text-[12px] text-ink-dim">
-                  {findings.state.headline}
+                  {deAiText(findings.state.headline)}
                 </div>
               ) : null}
             </div>
@@ -360,11 +361,11 @@ export function ResearchBoard({
                   </div>
                 )}
                 {findings.markdown ? (
-                  <div dangerouslySetInnerHTML={{ __html: marked.parse(findings.markdown) as string }} />
+                  <div dangerouslySetInnerHTML={{ __html: marked.parse(deAiMarkdown(findings.markdown)) as string }} />
                 ) : (
                   <div className="py-10 text-center text-[12px] text-ink-faint">
                     {active.lastRunStatus === "running"
-                      ? "First research pass running…"
+                      ? "First research pass running..."
                       : "No findings yet. Run the agent."}
                   </div>
                 )}
@@ -455,15 +456,15 @@ function PluginPanel({ panel }: { panel: Panel }) {
                     rel="noreferrer"
                     className="!text-inherit !no-underline hover:!underline"
                   >
-                    {item.value}
+                    {deAiText(item.value)}
                   </a>
                 ) : (
-                  item.value
+                  deAiText(item.value)
                 )}
               </span>
             </div>
             {item.detail && (
-              <div className="truncate text-[10px] text-ink-faint">{item.detail}</div>
+              <div className="truncate text-[10px] text-ink-faint">{deAiText(item.detail)}</div>
             )}
           </div>
         ))}
@@ -498,7 +499,7 @@ function RunControls({
         title="Run now (⌘R)"
       >
         <Play className="h-3 w-3" />
-        {running ? "Running…" : "Run now"}
+        {running ? "Running..." : "Run now"}
       </button>
       <button
         onClick={async () => {
@@ -720,7 +721,7 @@ function NewTabForm({
       <textarea
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
-        placeholder="Optional notes for the agent: angle, constraints, position context…"
+        placeholder="Optional notes for the agent: angle, constraints, position context..."
         rows={2}
         className="mt-2 w-full resize-none rounded-sm border border-hairline bg-bg px-3 py-2 text-[12px] text-ink placeholder:text-ink-faint focus:border-amber/50 focus:outline-none"
       />
@@ -737,7 +738,7 @@ function NewTabForm({
           disabled={busy || (meta.hasTopic && type !== "pulse" && type !== "scout" && !topic.trim())}
           className="rounded-sm border border-amber/40 bg-amber-dim px-4 py-1.5 text-[12px] font-semibold text-amber hover:bg-amber/25 disabled:opacity-40"
         >
-          {busy ? "Starting…" : `Start ${meta.label}`}
+          {busy ? "Starting..." : `Start ${meta.label}`}
         </button>
       </div>
     </div>

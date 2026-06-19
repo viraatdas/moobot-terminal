@@ -65,7 +65,7 @@ export class ResearchManager {
           fs.readFileSync(this.configPath(entry), "utf8"),
         ) as ResearchTab;
         // A foreign/corrupt dir with no id (or a missing createdAt) would otherwise
-        // crash list()'s createdAt.localeCompare — drop/repair it on load.
+        // crash list()'s createdAt.localeCompare, so drop/repair it on load.
         if (!tab || typeof tab.id !== "string" || !tab.id) continue;
         if (typeof tab.createdAt !== "string") tab.createdAt = new Date().toISOString();
         // Migrate pre-lens tabs.
@@ -261,7 +261,7 @@ export class ResearchManager {
         ? base + this.plugins.promptFragment()
         : base;
     if (runReason) {
-      prompt += `\n\nWAKE TRIGGER: ${runReason}. This run was triggered by that event, not the timer — lead with what it means for this thesis/book and whether it changes any proposal.`;
+      prompt += `\n\nWAKE TRIGGER: ${runReason}. This run was triggered by that event, not the timer. Lead with what it means for this thesis/book and whether it changes any proposal.`;
     }
     const allowedTools = [
       ...new Set([
@@ -276,8 +276,8 @@ export class ResearchManager {
       tabId: id,
       kind: "activity",
       text: runReason
-        ? `woke on ${runReason} — starting ${this.engineName(tab.engine)} agent…`
-        : `starting ${this.engineName(tab.engine)} agent…`,
+        ? `woke on ${runReason}, starting ${this.engineName(tab.engine)} agent...`
+        : `starting ${this.engineName(tab.engine)} agent...`,
     });
 
     const child = spawn(spec.bin, spec.args, {
@@ -446,7 +446,7 @@ RUNNER SAFETY:
       tab.lastError = null;
       if (!tab.sessionId) tab.sessionId = `deterministic:${tab.type}`;
       this.persist(tab);
-      this.onEvent?.({ tabId: tab.id, kind: "activity", text: "computed deterministic lattice…" });
+      this.onEvent?.({ tabId: tab.id, kind: "activity", text: "computed deterministic lattice..." });
       this.onEvent?.({ tabId: tab.id, kind: "run-finished" });
       this.onEvent?.({ tabId: tab.id, kind: "findings-updated" });
       this.onProposalsMaybeChanged?.(tab.id);
@@ -567,7 +567,7 @@ RUNNER SAFETY:
 
   /** Whether a strategy lens is currently flagged live. The live flag is a
    * money-path bit whose "only setLive may set it true" invariant the service
-   * owns — callers ask here instead of reaching into raw strategy JSON. */
+   * owns. Callers ask here instead of reaching into raw strategy JSON. */
   getLive(id: string): boolean {
     return (this.readStrategy(id) as Record<string, unknown> | null)?.live === true;
   }
@@ -621,7 +621,7 @@ RUNNER SAFETY:
     }
   }
 
-  /** Count of DISTINCT spec hashes ever verified for this lens — a lower bound on
+  /** Count of DISTINCT spec hashes ever verified for this lens. This is a lower bound on
    * the number of variants tried (the agent overwrites strategy.json each loop). */
   verificationTrials(id: string): number {
     const { records } = readJsonl<{ specHash?: string }>(

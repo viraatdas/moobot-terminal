@@ -35,10 +35,10 @@ export const LENS_META: Record<
 > = {
   chat: { label: "Chat", glyph: "✦", blurb: "Ask anything across your book, market data, venues, web, and other lenses.", hasTopic: true },
   research: { label: "Research", glyph: "◎", blurb: "Build a sourced brief on one ticker, theme, or catalyst.", hasTopic: true },
-  pulse: { label: "Watch", glyph: "◇", blurb: "Watch your book and scan for setups — pings you on fresh moves, headlines, and expiry risk.", hasTopic: true },
+  pulse: { label: "Watch", glyph: "◇", blurb: "Watch your book and scan for setups. Pings you on fresh moves, headlines, and expiry risk.", hasTopic: true },
   scout: { label: "Scout", glyph: "◆", blurb: "Find new setups that fit your holdings and trading style.", hasTopic: true },
   thesis: { label: "Thesis", glyph: "✛", blurb: "Hold and track a conviction view; proposes a trade when the evidence is there.", hasTopic: true },
-  exposure: { label: "Portfolio", glyph: "▦", blurb: "X-ray your book — directional risk, concentration, and scenario P&L.", hasTopic: false },
+  exposure: { label: "Portfolio", glyph: "▦", blurb: "X-ray your book: directional risk, concentration, and scenario P&L.", hasTopic: false },
   lattice: { label: "Lattice", glyph: "⬡", blurb: "Reveal hidden correlation clusters and one-bet risk.", hasTopic: false },
   trade: { label: "Trade", glyph: "▲", blurb: "Turn intent and tab context into approval-ready proposals.", hasTopic: true },
   strategy: { label: "Strategy", glyph: "⟐", blurb: "Co-author mechanical rules, backtest them, run them live.", hasTopic: true },

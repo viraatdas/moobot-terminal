@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { client, fmtMoney, type TradeProposal } from "../lib/client";
+import { deAiText } from "../lib/text";
 
 interface Props {
   proposals: TradeProposal[];
@@ -35,7 +36,7 @@ export function ProposalsRail({
           <div className="py-5 text-center text-[11.5px] leading-relaxed text-ink-faint">
             No pending proposals.
             <br />
-            Research agents and strategies file trades here when the evidence is there — nothing executes without your approval.
+            Research agents and strategies file trades here when the evidence is there. Nothing executes without your approval.
           </div>
         )}
         {pending.map((p) => (
@@ -99,7 +100,7 @@ function ProposalCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(true);
-  // Editable approval ticket — prefilled from the agent's proposal.
+  // Editable approval ticket, prefilled from the agent's proposal.
   const [qty, setQty] = useState(String(p.quantity));
   const [orderType, setOrderType] = useState<"market" | "limit">(p.orderType);
   const [limit, setLimit] = useState(p.limitPrice != null ? String(p.limitPrice) : "");
@@ -186,10 +187,10 @@ function ProposalCard({
               <span className="mt-px shrink-0 text-[8.5px] font-semibold tracking-[0.12em] text-amber uppercase">
                 why now
               </span>
-              <span className="text-[11px] leading-snug text-ink-dim select-text">{p.whyNow}</span>
+              <span className="text-[11px] leading-snug text-ink-dim select-text">{deAiText(p.whyNow)}</span>
             </div>
           )}
-          <div className="text-[11.5px] leading-relaxed text-ink-dim select-text">{p.thesis}</div>
+          <div className="text-[11.5px] leading-relaxed text-ink-dim select-text">{deAiText(p.thesis)}</div>
           {(p.stop != null || p.target != null) && (
             <div className="font-data mt-1.5 flex gap-3 text-[10px]">
               {p.target != null && (

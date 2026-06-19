@@ -189,6 +189,121 @@ button {
   text-decoration: none;
 }
 
+/* chat transcript */
+.chat-findings {
+  user-select: text;
+  cursor: auto;
+}
+.chat-findings > div {
+  padding-bottom: 10px;
+}
+.chat-findings h1,
+.chat-findings h2 {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-amber);
+  margin: 0 0 10px;
+}
+.chat-findings h1:not(:first-child),
+.chat-findings h2:not(:first-child) {
+  margin-top: 22px;
+}
+.chat-findings h3 {
+  margin: 18px 0 7px;
+  color: var(--color-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.chat-findings p,
+.chat-findings li {
+  color: var(--color-ink-dim);
+  font-size: 13px;
+  line-height: 1.68;
+}
+.chat-findings p {
+  margin: 0 0 9px;
+}
+.chat-findings ul,
+.chat-findings ol {
+  margin: 8px 0 12px;
+  padding-left: 20px;
+}
+.chat-findings ul {
+  list-style: square;
+}
+.chat-findings li {
+  margin-bottom: 5px;
+  padding-left: 2px;
+}
+.chat-findings strong {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+.chat-findings blockquote {
+  margin: 14px 0;
+  border-left: 2px solid rgba(240, 179, 76, 0.45);
+  background: var(--color-panel);
+  padding: 10px 12px;
+}
+.chat-findings table {
+  width: 100%;
+  margin: 12px 0 16px;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid var(--color-hairline);
+  background: var(--color-panel);
+  font-size: 12px;
+}
+.chat-findings th,
+.chat-findings td {
+  border-bottom: 1px solid var(--color-hairline);
+  padding: 7px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.chat-findings th {
+  background: var(--color-panel-2);
+  color: var(--color-ink);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.chat-findings td {
+  color: var(--color-ink-dim);
+}
+.chat-findings code {
+  font-family: var(--font-data);
+  font-size: 11.5px;
+  background: var(--color-panel-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--color-amber);
+}
+.chat-findings pre {
+  margin: 12px 0 16px;
+  overflow-x: auto;
+  border: 1px solid var(--color-hairline);
+  background: var(--color-panel);
+  padding: 12px;
+}
+.chat-findings pre code {
+  padding: 0;
+  background: transparent;
+  color: var(--color-ink-dim);
+}
+.chat-findings a {
+  color: var(--color-amber);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat-findings .cashtag {
+  text-decoration: none;
+}
+
 /* staggered column reveal on load */
 @keyframes col-in {
   from {
