@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, Bot, ChevronDown, ChevronUp, Code2, FlaskConical, Link2, Settings, Trophy, Wifi, Zap } from "lucide-react";
-import { fmtMoney, type AgentEngine } from "../lib/client";
+import { Bell, ChevronDown, ChevronUp, FlaskConical, Link2, Settings, Trophy, Wifi, Zap } from "lucide-react";
+import { fmtMoney } from "../lib/client";
 import { MarketClock } from "./MarketClock";
 
 interface Props {
@@ -16,8 +16,6 @@ interface Props {
   onOpenConnection: () => void;
   onOpenMarketConnections: () => void;
   cloud: boolean;
-  agentEngine: AgentEngine;
-  onAgentEngineChange: (engine: AgentEngine) => void;
   paperMode: boolean;
   onTogglePaper: () => void;
   onOpenTrackRecord: () => void;
@@ -195,19 +193,15 @@ function TogglePill({ on }: { on: boolean }) {
   );
 }
 
-// Low-frequency settings, grouped off the main bar: agent engine, event triggers,
+// Low-frequency settings, grouped off the main bar: event triggers,
 // connection details, and the track-record modal.
 function SettingsMenu({
-  agentEngine,
-  onAgentEngineChange,
   eventTriggers,
   onToggleEventTriggers,
   onOpenConnection,
   onOpenMarketConnections,
   onOpenTrackRecord,
 }: {
-  agentEngine: AgentEngine;
-  onAgentEngineChange: (engine: AgentEngine) => void;
   eventTriggers: boolean;
   onToggleEventTriggers: () => void;
   onOpenConnection: () => void;
@@ -255,34 +249,6 @@ function SettingsMenu({
           role="menu"
           className="absolute right-0 top-[calc(100%+7px)] z-[70] w-64 overflow-hidden rounded-md border border-hairline-2 bg-panel shadow-2xl"
         >
-          <div className="border-b border-hairline px-3 py-2.5">
-            <div className="mb-1.5 text-[9.5px] tracking-[0.16em] text-ink-faint uppercase">
-              Agent engine
-            </div>
-            <div className="flex items-center overflow-hidden rounded-sm border border-hairline bg-panel-2">
-              {(["claude", "codex"] as const).map((engine) => {
-                const active = agentEngine === engine;
-                const Icon = engine === "codex" ? Code2 : Bot;
-                return (
-                  <button
-                    key={engine}
-                    type="button"
-                    onClick={() => onAgentEngineChange(engine)}
-                    className={`flex h-7 flex-1 items-center justify-center gap-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase ${
-                      active ? "bg-amber-dim text-amber" : "text-ink-faint hover:text-ink-dim"
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {engine}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-1.5 text-[9.5px] leading-snug text-ink-faint">
-              Default for new lenses. Existing tabs keep their engine.
-            </div>
-          </div>
-
           <button
             type="button"
             role="menuitemcheckbox"
@@ -355,8 +321,6 @@ export function TitleBar({
   onOpenConnection,
   onOpenMarketConnections,
   cloud,
-  agentEngine,
-  onAgentEngineChange,
   paperMode,
   onTogglePaper,
   onOpenTrackRecord,
@@ -427,8 +391,6 @@ export function TitleBar({
       </button>
 
       <SettingsMenu
-        agentEngine={agentEngine}
-        onAgentEngineChange={onAgentEngineChange}
         eventTriggers={eventTriggers}
         onToggleEventTriggers={onToggleEventTriggers}
         onOpenConnection={onOpenConnection}

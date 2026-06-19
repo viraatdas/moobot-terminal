@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   client,
   LENS_META,
-  type AgentEngine,
   type AccountSnapshot,
   type LensType,
   type ResearchEvent,
@@ -155,11 +154,6 @@ export default function App() {
   const [focusSection, setFocusSection] = useState<
     "chart" | "risk" | "events" | "scanner" | "correlation" | null
   >(null);
-  const [agentEngine, setAgentEngine] = useState<AgentEngine>(() => {
-    const saved = localStorage.getItem("moobot.agentEngine.v1");
-    return saved === "codex" ? "codex" : "claude";
-  });
-
   // Global cashtag clicks ($SPY anywhere) open the options chain.
   useEffect(() => {
     const onTicker = (e: Event) => {
@@ -420,11 +414,6 @@ export default function App() {
     localStorage.setItem("moobot.account.v2", num);
   }, []);
 
-  const selectAgentEngine = useCallback((engine: AgentEngine) => {
-    setAgentEngine(engine);
-    localStorage.setItem("moobot.agentEngine.v1", engine);
-  }, []);
-
   const selectSymbol = useCallback((symbol: string) => {
     const clean = symbol.replace(/^\$/, "").trim().toUpperCase();
     if (!clean) return;
@@ -472,12 +461,12 @@ export default function App() {
       notes: "",
       intervalMinutes: 0,
       refs: [],
-      engine: agentEngine,
+      engine: "claude",
       autoRun: false,
     });
     await refreshResearch();
     activateLensId(tab.id);
-  }, [activateLensId, agentEngine, refreshResearch]);
+  }, [activateLensId, refreshResearch]);
 
   const createLensTemplate = useCallback(
     async (template: LensTemplateId) => {
@@ -498,14 +487,14 @@ export default function App() {
         }
         const tab = await client.request<ResearchTab>("research.create", {
           ...spec,
-          engine: agentEngine,
+          engine: "claude",
         });
         firstId = firstId ?? tab.id;
       }
       await refreshResearch();
       if (firstId) activateLensId(firstId);
     },
-    [activateLensId, agentEngine, refreshResearch, tabs],
+    [activateLensId, refreshResearch, tabs],
   );
 
   const cockpitSections = useMemo<CommandPaletteSectionTarget[]>(
@@ -871,8 +860,6 @@ export default function App() {
         onOpenConnection={() => setShowConnection(true)}
         onOpenMarketConnections={() => setShowMarketConnections(true)}
         cloud={cloud}
-        agentEngine={agentEngine}
-        onAgentEngineChange={selectAgentEngine}
         paperMode={paperMode}
         onTogglePaper={togglePaper}
         onOpenTrackRecord={() => setShowTrackRecord(true)}
@@ -936,7 +923,7 @@ export default function App() {
               <ResearchBoard
                 tabs={tabs}
                 feed={feed}
-                agentEngine={agentEngine}
+                agentEngine="claude"
                 createLensRequest={createLensRequest}
                 selectTabRequest={selectLensRequest}
                 creatingOnly={Boolean(draftLensTab)}

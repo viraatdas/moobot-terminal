@@ -316,7 +316,6 @@ export function ResearchBoard({
                   <LensIcon type={active.type} />
                 </span>
                 <TabTitle tab={active} onChanged={onTabsChanged} />
-                <EngineBadge engine={active.engine ?? "claude"} />
               </div>
               {active.lastRunStatus === "error" && active.lastError ? (
                 <div className="mt-0.5 truncate text-[12px] text-neg" title={active.lastError}>
@@ -432,19 +431,6 @@ const TONE_CLS: Record<string, string> = {
   neg: "text-neg",
   neutral: "text-ink-dim",
 };
-
-function EngineBadge({ engine }: { engine: AgentEngine }) {
-  return (
-    <span
-      className={`rounded-sm border px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.12em] uppercase ${
-        engine === "codex" ? "border-pos/25 text-pos" : "border-amber/25 text-amber"
-      }`}
-      title="Engine locked when this tab was created"
-    >
-      {engine}
-    </span>
-  );
-}
 
 function PluginPanel({ panel }: { panel: Panel }) {
   return (
@@ -677,11 +663,6 @@ function NewTabForm({
           <div className="text-[12px] leading-snug text-ink">{meta.blurb}</div>
         </div>
       </div>
-      <div className="mb-2 inline-flex items-center gap-1.5 rounded-sm border border-hairline bg-bg px-2 py-1 text-[10px] tracking-[0.12em] text-ink-faint uppercase">
-        new tab engine
-        <EngineBadge engine={agentEngine} />
-      </div>
-
       <div className="grid grid-cols-[1fr_auto] gap-3">
         <input
           ref={ref}
