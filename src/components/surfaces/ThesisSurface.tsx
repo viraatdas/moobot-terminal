@@ -10,44 +10,19 @@ function fitTone(fit: string): { text: string; border: string } {
   return { text: "text-ink-dim", border: "var(--color-ink-faint)" };
 }
 
-function AlignmentRing({ value }: { value: number }) {
+function AlignmentPill({ value }: { value: number }) {
   const v = Math.max(0, Math.min(100, value));
-  const R = 33;
-  const C = 2 * Math.PI * R;
-  const off = C * (1 - v / 100);
-  const color =
-    v >= 66 ? "var(--color-pos)" : v >= 33 ? "var(--color-amber)" : "var(--color-neg)";
+  const tone =
+    v >= 66
+      ? "border-pos/40 bg-pos-dim text-pos"
+      : v >= 33
+        ? "border-amber/40 bg-amber-dim text-amber"
+        : "border-neg/50 bg-neg-dim text-neg";
   return (
-    <svg width="82" height="82" viewBox="0 0 82 82">
-      <circle cx="41" cy="41" r={R} fill="none" stroke="var(--color-hairline-2)" strokeWidth="6" />
-      <circle
-        cx="41"
-        cy="41"
-        r={R}
-        fill="none"
-        stroke={color}
-        strokeWidth="6"
-        strokeLinecap="round"
-        strokeDasharray={C}
-        strokeDashoffset={off}
-        transform="rotate(-90 41 41)"
-        style={{ transition: "stroke-dashoffset 0.6s cubic-bezier(0.16,1,0.3,1)" }}
-      />
-      <text
-        x="41"
-        y="39"
-        textAnchor="middle"
-        className="font-data"
-        fill="var(--color-ink)"
-        fontSize="19"
-        fontWeight="600"
-      >
-        {Math.round(v)}
-      </text>
-      <text x="41" y="54" textAnchor="middle" fill="var(--color-ink-faint)" fontSize="9">
-        / 100
-      </text>
-    </svg>
+    <div className={`font-data rounded-sm border px-2.5 py-1 text-[18px] font-semibold ${tone}`}>
+      {Math.round(v)}
+      <span className="text-[10px] font-normal opacity-60"> / 100</span>
+    </div>
   );
 }
 
@@ -87,9 +62,9 @@ export function ThesisSurface({ data }: { data: any }) {
             </div>
           )}
         </div>
-        <div className="flex shrink-0 flex-col items-center">
-          <AlignmentRing value={align} />
-          <div className="mt-1 text-[9.5px] tracking-[0.14em] uppercase text-ink-faint">
+        <div className="flex shrink-0 flex-col items-center gap-1.5">
+          <AlignmentPill value={align} />
+          <div className="text-[9.5px] tracking-[0.14em] uppercase text-ink-faint">
             book alignment
           </div>
         </div>

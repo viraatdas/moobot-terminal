@@ -20,6 +20,14 @@ export interface StrategyRuntimeDeps {
   isEnabled: () => boolean;
   isConnected: () => boolean;
   isPaper: () => boolean;
+  /** The auto-trader config — lets the runtime honor the explicit, tab-scoped
+   * `acceptUnverifiedReal` override (every other strategy stays hard-gated). */
+  autoTradeConfig?: () => {
+    enabled: boolean;
+    allowReal: boolean;
+    acceptUnverifiedReal: boolean;
+    strategyTabId: string | null;
+  };
   onActivity?: (tabId: string, text: string) => void;
 }
 
@@ -54,6 +62,12 @@ export class StrategyRuntime {
   stop() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  /** Force an immediate evaluation — used right after wiring an auto-trader so a
+   * setup can fire without waiting for the next 5-minute tick. */
+  async tickNow() {
+    await this.tick();
   }
 
   private async tick() {
@@ -104,21 +118,37 @@ export class StrategyRuntime {
         // from the backtest. Paper mode is exempt so unverified strategies can trial.
         let entriesAllowed = true;
         if (!this.deps.isPaper()) {
-          const v = this.deps.research.readVerification(tab.id);
-          // ONE canonical gate (shared with the UI badge + the go-live gate). When
-          // it passes, v is non-null. The live-divergence check stays separate.
-          if (!gateVerification(spec, v).ok) {
-            entriesAllowed = false;
-            this.deps.onActivity?.(tab.id, "not opening new positions (real money): rules unverified or changed since verification — exits still allowed");
+          // Explicit, tab-scoped escape hatch: the auto-trader may open REAL
+          // positions on an UNVERIFIED strategy ONLY when the user has deliberately
+          // armed `acceptUnverifiedReal` for THIS exact tab (they accepted it's -EV).
+          // The hard caps + daily-loss kill-switch in proposals.autoTrade() are the
+          // protection. Any other strategy stays fully gated below.
+          const at = this.deps.autoTradeConfig?.();
+          const overridden =
+            !!at &&
+            at.enabled &&
+            at.allowReal === true &&
+            at.acceptUnverifiedReal === true &&
+            at.strategyTabId === tab.id;
+          if (overridden) {
+            this.deps.onActivity?.(tab.id, "real-money entries ALLOWED via explicit unverified-override — hard caps + daily-loss kill-switch are the only guardrails");
           } else {
-            try {
-              const lc = await this.deps.trackRecord.liveConsistency(tab.id, v!.backtestWinRatePct ?? null, v!.specHash ?? null);
-              if (lc.verdict === "diverged") {
-                entriesAllowed = false;
-                this.deps.onActivity?.(tab.id, `not opening new positions (real money): live results diverged from backtest — ${lc.detail} — exits still allowed`);
+            const v = this.deps.research.readVerification(tab.id);
+            // ONE canonical gate (shared with the UI badge + the go-live gate). When
+            // it passes, v is non-null. The live-divergence check stays separate.
+            if (!gateVerification(spec, v).ok) {
+              entriesAllowed = false;
+              this.deps.onActivity?.(tab.id, "not opening new positions (real money): rules unverified or changed since verification — exits still allowed");
+            } else {
+              try {
+                const lc = await this.deps.trackRecord.liveConsistency(tab.id, v!.backtestWinRatePct ?? null, v!.specHash ?? null);
+                if (lc.verdict === "diverged") {
+                  entriesAllowed = false;
+                  this.deps.onActivity?.(tab.id, `not opening new positions (real money): live results diverged from backtest — ${lc.detail} — exits still allowed`);
+                }
+              } catch {
+                /* reconciliation unavailable this tick — leave entries allowed */
               }
-            } catch {
-              /* reconciliation unavailable this tick — leave entries allowed */
             }
           }
         }
@@ -168,8 +198,15 @@ export class StrategyRuntime {
           }
 
           const prev = this.lastSignal.get(sigKey) ?? false;
-          this.lastSignal.set(sigKey, signal);
-          if (!signal || prev) continue; // only on a rising edge
+          // Clear the latch the instant the signal clears; only latch it TRUE after we
+          // actually file a proposal (below). A rising edge blocked by a transient guard
+          // (no entry price, cap hit, gate veto) then retries next tick instead of being
+          // permanently stranded with prev=true.
+          if (!signal) {
+            this.lastSignal.set(sigKey, false);
+            continue;
+          }
+          if (prev) continue; // already acted on this rising edge
           if (Date.now() - (this.lastFire.get(sigKey) ?? 0) < MIN_FIRE_GAP_MS) continue;
 
           // Block NEW entries when real-money rules are unverified/diverged; exits
@@ -201,14 +238,34 @@ export class StrategyRuntime {
           const quantity =
             !isEntry && holding
               ? Math.abs(holding.quantity) // exit: close the full held position (short qty is negative)
-              : sizeOrder(spec.sizing, accountEquity, price);
+              : sizeOrder(spec.sizing, accountEquity, price, spec.fractional === true);
           if (quantity <= 0) continue;
 
+          // Don't re-file a signal already sitting as a pending proposal — e.g. after a
+          // restart re-evaluates a still-true entry (lastSignal is in-memory), or while
+          // the daily cap holds an earlier one back. Avoids pending-queue accumulation.
+          const alreadyPending = this.deps.proposals
+            .list()
+            .some((x) => x.tabId === tab.id && x.symbol === symbol && x.side === side && x.status === "pending");
+          if (alreadyPending) {
+            this.lastSignal.set(sigKey, true);
+            continue;
+          }
+
           this.fileProposal(tab.id, tab.topic, symbol, side, quantity, spec, reason, specHash);
+          this.lastSignal.set(sigKey, true); // latch only after acting on the edge
           this.lastFire.set(sigKey, Date.now());
           this.deps.onActivity?.(tab.id, `signal: ${side} ${quantity} ${symbol} — ${reason}`);
           await this.deps.proposals.ingest(tab.id);
         }
+      }
+      // Self-healing pass: re-attempt any still-pending in-scope auto-trade proposals
+      // (a prior skip from a transient snapshot blip or a closed market) so a signal is
+      // never permanently orphaned. No-op unless the auto-trader is enabled.
+      try {
+        await this.deps.proposals.autoApproveSweep();
+      } catch (err) {
+        console.error(`[auto-approve sweep] ${err}`);
       }
     } finally {
       this.ticking = false;

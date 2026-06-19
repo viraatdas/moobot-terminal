@@ -22,14 +22,7 @@ export function ProposalsRail({
   return (
     <div className="flex min-h-0 flex-col bg-bg">
       <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
-        <span className="flex items-center gap-2 text-[10px] tracking-[0.16em] uppercase text-ink-faint">
-          Trade proposals
-          {paperMode && (
-            <span className="rounded-sm border border-amber/40 bg-amber-dim px-1.5 py-0.5 text-[9px] font-semibold text-amber">
-              paper
-            </span>
-          )}
-        </span>
+        <span className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">Trade proposals</span>
         {pending.length > 0 && (
           <span className="font-data rounded-sm bg-amber-dim px-1.5 py-0.5 text-[10px] font-semibold text-amber">
             {pending.length}
@@ -42,8 +35,7 @@ export function ProposalsRail({
           <div className="py-5 text-center text-[11.5px] leading-relaxed text-ink-faint">
             No pending proposals.
             <br />
-            Research agents file trades here when the evidence is there - nothing executes
-            without your approval.
+            Research agents and strategies file trades here when the evidence is there — nothing executes without your approval.
           </div>
         )}
         {pending.map((p) => (
@@ -368,14 +360,7 @@ function OrderTicket({
   return (
     <div className="shrink-0 border-t border-hairline bg-panel p-3">
       <div className="mb-2 flex items-baseline justify-between">
-        <span className="flex items-center gap-1.5 text-[10px] tracking-[0.16em] uppercase text-ink-faint">
-          Order ticket
-          {paperMode && (
-            <span className="rounded-sm border border-amber/40 bg-amber-dim px-1 py-0.5 text-[8.5px] font-semibold text-amber">
-              paper
-            </span>
-          )}
-        </span>
+        <span className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">Order ticket</span>
         {accountNumber && (
           <span className="font-data text-[9.5px] text-ink-faint">
             → {accountNumber}

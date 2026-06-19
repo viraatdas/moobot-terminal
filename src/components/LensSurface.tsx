@@ -1,5 +1,6 @@
-import type { LensType, StrategySpec } from "../lib/client";
+import type { LensType, ResearchTab, StrategySpec } from "../lib/client";
 import { StrategySurface } from "./StrategySurface";
+import { ChatSurface } from "./surfaces/ChatSurface";
 import { PulseSurface } from "./surfaces/PulseSurface";
 import { ScoutSurface } from "./surfaces/ScoutSurface";
 import { ThesisSurface } from "./surfaces/ThesisSurface";
@@ -11,10 +12,16 @@ interface Props {
   type: LensType;
   lens: Record<string, any>;
   tabId: string;
+  tab?: ResearchTab;
+  onChanged?: () => void;
 }
 
-export function LensSurface({ type, lens, tabId }: Props) {
+export function LensSurface({ type, lens, tabId, tab, onChanged }: Props) {
   switch (type) {
+    case "chat":
+      return tab ? (
+        <ChatSurface tab={tab} markdown={lens["chat.md"] ?? ""} onChanged={onChanged ?? (() => {})} />
+      ) : null;
     case "pulse":
       return <PulseSurface items={lens["pulse.json"] ?? []} />;
     case "scout":

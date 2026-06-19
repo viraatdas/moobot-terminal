@@ -1,15 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import {
-  AlertTriangle,
-  Bell,
-  Sparkles,
-  Target,
-  Zap,
-} from "lucide-react";
+import { AlertTriangle, Bell, Sparkles, Zap } from "lucide-react";
 import {
   client,
-  fmtMoney,
-  fmtPct,
   type AccountSnapshot,
   type FeedLine,
   type MarketEvent,
@@ -26,15 +18,8 @@ import {
   normalizeRisk,
   type FocusSection,
 } from "./cockpit/derive";
-import {
-  CorrelationPanel,
-  EmptyPanel,
-  EventsPanel,
-  Kpi,
-  PanelTitle,
-  RiskPanel,
-  ScannerPanel,
-} from "./cockpit/panels";
+import { CorrelationPanel, EventsPanel, RiskPanel, ScannerPanel } from "./cockpit/panels";
+import { AutoTraderPanel } from "./AutoTraderPanel";
 
 interface Props {
   snapshot: AccountSnapshot | null;
@@ -57,8 +42,6 @@ interface Props {
 export function Cockpit({
   snapshot,
   robinhoodConnected,
-  agenticBuyingPower,
-  tabs,
   feed,
   proposals,
   activeSymbol,
@@ -69,7 +52,6 @@ export function Cockpit({
   onConnect,
   onOpenAlerts,
   onOpenChain,
-  onOpenPortfolioHistory,
 }: Props) {
   const positions = useMemo(() => allPositions(snapshot), [snapshot]);
   const localRisk = useMemo(() => deriveRisk(snapshot), [snapshot]);
@@ -138,22 +120,6 @@ export function Cockpit({
     map[focusSection].current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [focusSection]);
 
-  const pf = snapshot?.portfolio;
-  const pnlTone = (pf?.pnl ?? 0) >= 0 ? "pos" : "neg";
-  const todayPnl = Number(pf?.dayPnl ?? 0);
-  const hasTodayPnl = pf?.dayPnl !== undefined && Number.isFinite(pf.dayPnl);
-  const todayPnlTone = hasTodayPnl ? (todayPnl >= 0 ? "pos" : "neg") : "ink";
-  const todaySince = pf?.dayStartAt
-    ? new Date(pf.dayStartAt).toLocaleString([], {
-        month: "short",
-        day: "2-digit",
-        hour: "numeric",
-        minute: "2-digit",
-      })
-    : "today";
-  const activePosition = positions.find((p) => p.symbol === activeSymbol);
-  const connectedDetail = robinhoodConnected ? "Robinhood MCP connected" : "Robinhood MCP disconnected";
-
   return (
     <div className="cockpit-root min-h-0 flex-1 overflow-y-auto bg-bg" data-cockpit>
       <div className="cockpit-hero border-b border-hairline px-5 py-4">
@@ -187,31 +153,6 @@ export function Cockpit({
             </button>
           </div>
         </div>
-        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
-          <Kpi
-            label="account"
-            value={pf ? fmtMoney(pf.equity) : "n/a"}
-            detail={connectedDetail}
-            onClick={onOpenPortfolioHistory}
-            title="Open portfolio performance chart"
-          />
-          <Kpi
-            label="unrealized"
-            value={pf ? `${pf.pnl >= 0 ? "+" : ""}${fmtMoney(pf.pnl)}` : "n/a"}
-            tone={pnlTone}
-            detail={pf ? fmtPct(pf.pnlPercent) : undefined}
-          />
-          <Kpi
-            label="today"
-            value={hasTodayPnl ? `${todayPnl >= 0 ? "+" : ""}${fmtMoney(todayPnl)}` : "n/a"}
-            tone={todayPnlTone}
-            detail={hasTodayPnl ? `since ${todaySince}` : "waiting for today's baseline"}
-          />
-          <Kpi label="cash" value={pf ? fmtMoney(pf.cash) : "n/a"} />
-          <Kpi label="tradeable" value={agenticBuyingPower !== null ? fmtMoney(agenticBuyingPower) : "n/a"} tone="amber" />
-          <Kpi label="active" value={activeSymbol} detail={activePosition ? fmtMoney(activePosition.value) : "chart focus"} />
-          <Kpi label="pending" value={String(proposals.filter((p) => p.status === "pending").length)} detail="proposals" />
-        </div>
         {!robinhoodConnected && (
           <div className="mt-3 flex items-center gap-3 rounded-sm border border-amber/25 bg-amber-dim/30 px-3 py-2 text-[12px] text-amber">
             <AlertTriangle className="h-4 w-4" />
@@ -227,6 +168,8 @@ export function Cockpit({
       </div>
 
       <div className="space-y-4 p-4">
+        <AutoTraderPanel />
+
         <div ref={chartRef} data-cockpit-section="chart">
           <SymbolChart symbol={activeSymbol} positions={positions} onSymbolChange={onSymbolChange} />
         </div>
@@ -253,29 +196,6 @@ export function Cockpit({
             />
           </div>
         </div>
-
-        <section className="cockpit-panel">
-          <PanelTitle icon={<Target className="h-3.5 w-3.5" />} title="Agent lanes" meta={`${tabs.length} lenses`} />
-          <div className="grid gap-2 xl:grid-cols-3">
-            {tabs.slice(0, 6).map((tab) => (
-              <div key={tab.id} className="rounded-sm border border-hairline bg-bg px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[12px] font-semibold text-ink">{tab.topic}</span>
-                  <span
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                      tab.lastRunStatus === "running" ? "bg-amber pulse-dot" : tab.lastRunStatus === "error" ? "bg-neg" : "bg-pos"
-                    }`}
-                  />
-                </div>
-                <div className="mt-1 flex items-center justify-between text-[10px] text-ink-faint">
-                  <span>{tab.type}</span>
-                  <span className="font-data">run {tab.runCount}</span>
-                </div>
-              </div>
-            ))}
-            {tabs.length === 0 && <EmptyPanel text="No research lenses yet. Use Auto or Cmd+K to start one." />}
-          </div>
-        </section>
       </div>
     </div>
   );

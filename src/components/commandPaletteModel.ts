@@ -2,7 +2,6 @@ import {
   fmtMoney,
   fmtPct,
   type AccountSnapshot,
-  type LensType,
   type Position,
 } from "../lib/client";
 
@@ -94,16 +93,6 @@ export const DEFAULT_COMMAND_PALETTE_SECTIONS: CommandPaletteSectionTarget[] = [
     detail: "Pending approvals, history, and manual order ticket",
     keywords: ["orders", "ticket", "approve", "trades"],
   },
-];
-
-export const CREATE_LENS_ORDER: LensType[] = [
-  "research",
-  "pulse",
-  "scout",
-  "thesis",
-  "exposure",
-  "lattice",
-  "trade",
 ];
 
 export function normalizeCommandSymbol(value: string): string {

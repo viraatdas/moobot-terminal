@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, Bot, ChevronDown, ChevronUp, Code2, FlaskConical, Trophy, Zap } from "lucide-react";
+import { Bell, Bot, ChevronDown, ChevronUp, Code2, FlaskConical, Link2, Settings, Trophy, Wifi, Zap } from "lucide-react";
 import { fmtMoney, type AgentEngine } from "../lib/client";
 import { MarketClock } from "./MarketClock";
 
@@ -14,6 +14,7 @@ interface Props {
   pendingCount: number;
   onOpenAlerts: () => void;
   onOpenConnection: () => void;
+  onOpenMarketConnections: () => void;
   cloud: boolean;
   agentEngine: AgentEngine;
   onAgentEngineChange: (engine: AgentEngine) => void;
@@ -182,35 +183,161 @@ function AccountMenu({
   );
 }
 
-function AgentEngineSwitch({
-  value,
-  onChange,
-}: {
-  value: AgentEngine;
-  onChange: (engine: AgentEngine) => void;
-}) {
+function TogglePill({ on }: { on: boolean }) {
   return (
-    <div
-      className="flex items-center overflow-hidden rounded-sm border border-hairline bg-panel-2"
-      title="Default agent for newly-created lenses. Existing tabs keep their current engine."
+    <span
+      className={`rounded-sm border px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.1em] uppercase ${
+        on ? "border-amber/40 bg-amber-dim text-amber" : "border-hairline text-ink-faint"
+      }`}
     >
-      {(["claude", "codex"] as const).map((engine) => {
-        const active = value === engine;
-        const Icon = engine === "codex" ? Code2 : Bot;
-        return (
+      {on ? "On" : "Off"}
+    </span>
+  );
+}
+
+// Low-frequency settings, grouped off the main bar: agent engine, event triggers,
+// connection details, and the track-record modal.
+function SettingsMenu({
+  agentEngine,
+  onAgentEngineChange,
+  eventTriggers,
+  onToggleEventTriggers,
+  onOpenConnection,
+  onOpenMarketConnections,
+  onOpenTrackRecord,
+}: {
+  agentEngine: AgentEngine;
+  onAgentEngineChange: (engine: AgentEngine) => void;
+  eventTriggers: boolean;
+  onToggleEventTriggers: () => void;
+  onOpenConnection: () => void;
+  onOpenMarketConnections: () => void;
+  onOpenTrackRecord: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Settings"
+        className={`grid h-7 w-7 place-items-center rounded-sm border ${
+          open
+            ? "border-amber/50 bg-amber-dim text-amber"
+            : "border-hairline text-ink-dim hover:border-amber/50 hover:text-amber"
+        }`}
+      >
+        <Settings className="h-3.5 w-3.5" />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+7px)] z-[70] w-64 overflow-hidden rounded-md border border-hairline-2 bg-panel shadow-2xl"
+        >
+          <div className="border-b border-hairline px-3 py-2.5">
+            <div className="mb-1.5 text-[9.5px] tracking-[0.16em] text-ink-faint uppercase">
+              Agent engine
+            </div>
+            <div className="flex items-center overflow-hidden rounded-sm border border-hairline bg-panel-2">
+              {(["claude", "codex"] as const).map((engine) => {
+                const active = agentEngine === engine;
+                const Icon = engine === "codex" ? Code2 : Bot;
+                return (
+                  <button
+                    key={engine}
+                    type="button"
+                    onClick={() => onAgentEngineChange(engine)}
+                    className={`flex h-7 flex-1 items-center justify-center gap-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase ${
+                      active ? "bg-amber-dim text-amber" : "text-ink-faint hover:text-ink-dim"
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {engine}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-1.5 text-[9.5px] leading-snug text-ink-faint">
+              Default for new lenses. Existing tabs keep their engine.
+            </div>
+          </div>
+
           <button
-            key={engine}
             type="button"
-            onClick={() => onChange(engine)}
-            className={`flex h-7 items-center gap-1.5 px-2 text-[10px] font-semibold tracking-[0.12em] uppercase ${
-              active ? "bg-amber-dim text-amber" : "text-ink-faint hover:text-ink-dim"
-            }`}
+            role="menuitemcheckbox"
+            aria-checked={eventTriggers}
+            onClick={onToggleEventTriggers}
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left hover:bg-panel-2"
           >
-            <Icon className="h-3.5 w-3.5" />
-            {engine}
+            <Zap className={`h-3.5 w-3.5 shrink-0 ${eventTriggers ? "text-amber" : "text-ink-faint"}`} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px] font-medium text-ink">Event triggers</span>
+              <span className="block text-[10px] text-ink-faint">Wake agents on 5% moves &amp; new filings</span>
+            </span>
+            <TogglePill on={eventTriggers} />
           </button>
-        );
-      })}
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onOpenConnection();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2.5 border-t border-hairline px-3 py-2.5 text-left hover:bg-panel-2"
+          >
+            <Wifi className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+            <span className="text-[12px] font-medium text-ink">Connection…</span>
+          </button>
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onOpenMarketConnections();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2.5 border-t border-hairline px-3 py-2.5 text-left hover:bg-panel-2"
+          >
+            <Link2 className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+            <span className="text-[12px] font-medium text-ink">Market connections…</span>
+          </button>
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onOpenTrackRecord();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2.5 border-t border-hairline px-3 py-2.5 text-left hover:bg-panel-2"
+          >
+            <Trophy className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+            <span className="text-[12px] font-medium text-ink">Track record</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -226,6 +353,7 @@ export function TitleBar({
   pendingCount,
   onOpenAlerts,
   onOpenConnection,
+  onOpenMarketConnections,
   cloud,
   agentEngine,
   onAgentEngineChange,
@@ -251,16 +379,15 @@ export function TitleBar({
       </span>
 
       <div className="flex items-center gap-4" data-tauri-drag-region>
-        <button
-          onClick={onOpenConnection}
-          title="Engine connection (local / cloud)"
-          className="flex items-center gap-1.5 hover:opacity-80"
+        <span
+          className="flex items-center gap-1.5"
+          title={`Engine: ${cloud ? "cloud" : "local"} — ${sidecarUp ? "connected" : "disconnected"}`}
         >
           <span className={`h-1.5 w-1.5 rounded-full ${sidecarUp ? "bg-pos" : "bg-neg pulse-dot"}`} />
           <span className="text-[10px] tracking-[0.14em] uppercase text-ink-faint">
-            {cloud ? "cloud" : "engine"}
+            {cloud ? "Cloud" : "Local"}
           </span>
-        </button>
+        </span>
         <Dot ok={rhAuthed} label="robinhood" />
       </div>
 
@@ -273,24 +400,6 @@ export function TitleBar({
       <div className="flex-1" data-tauri-drag-region />
 
       <MarketClock />
-
-      <AgentEngineSwitch value={agentEngine} onChange={onAgentEngineChange} />
-
-      <button
-        onClick={onToggleEventTriggers}
-        title={
-          eventTriggers
-            ? "Event triggers ON — agents wake on 5% moves and new filings, not just the timer. Click to disable."
-            : "Event triggers OFF — agents run on their timer only. Click to wake them on market events."
-        }
-        className={`grid h-7 w-7 place-items-center rounded-sm border ${
-          eventTriggers
-            ? "border-amber/50 bg-amber-dim text-amber"
-            : "border-hairline text-ink-faint hover:border-amber/40 hover:text-ink-dim"
-        }`}
-      >
-        <Zap className="h-3.5 w-3.5" />
-      </button>
 
       <button
         onClick={onTogglePaper}
@@ -310,20 +419,22 @@ export function TitleBar({
       </button>
 
       <button
-        onClick={onOpenTrackRecord}
-        title="Track record — how the agents' proposals have performed"
-        className="grid h-7 w-7 place-items-center rounded-sm border border-hairline text-ink-dim hover:border-amber/50 hover:text-amber"
-      >
-        <Trophy className="h-3.5 w-3.5" />
-      </button>
-
-      <button
         onClick={onOpenAlerts}
         title="Price alerts"
         className="grid h-7 w-7 place-items-center rounded-sm border border-hairline text-ink-dim hover:border-amber/50 hover:text-amber"
       >
         <Bell className="h-3.5 w-3.5" />
       </button>
+
+      <SettingsMenu
+        agentEngine={agentEngine}
+        onAgentEngineChange={onAgentEngineChange}
+        eventTriggers={eventTriggers}
+        onToggleEventTriggers={onToggleEventTriggers}
+        onOpenConnection={onOpenConnection}
+        onOpenMarketConnections={onOpenMarketConnections}
+        onOpenTrackRecord={onOpenTrackRecord}
+      />
 
       {!rhAuthed && sidecarUp && (
         <button

@@ -7,6 +7,7 @@
 // expected output files differ.
 
 export type LensType =
+  | "chat"
   | "research"
   | "pulse"
   | "scout"
@@ -44,7 +45,8 @@ const DATA_API = `Moobot Terminal exposes a local read-only API on http://127.0.
 - Option chain: curl -s "http://127.0.0.1:4517/chain?symbol=SPY" then ...&expiration=YYYY-MM-DD.
 - Correlation lattice: curl -s "http://127.0.0.1:4517/lattice" → measured 30d/90d/252d correlations, risk-weighted relationships, clusters, and explicit measured/estimated source flags.
 - Prediction markets (Polymarket + Kalshi odds on a topic): curl -s "http://127.0.0.1:4517/predictions?q=fed+rate+cut" → {markets:[{source,question,probability(0..1),outcomes[],volume,closeTime,url}]}. Use these crowd-implied probabilities for event-driven theses (elections, macro prints, approvals, geopolitics); cite the probability + venue, and prefer higher-volume markets.
-This API is backed by the user's Robinhood MCP connection (predictions are public, no account needed). If a section returns {"error":...} or empty, note it and fall back to web research.`;
+- Authenticated venue reads, when connected: /venues/kalshi/portfolio, /venues/kalshi/markets?q=..., /venues/polymarket/account, /venues/polymarket/markets, /venues/hyperliquid/account, /venues/hyperliquid/markets?kind=book&coin=BTC.
+This API is backed by the user's Robinhood MCP connection plus local venue key files. It is read-only: do not attempt order placement, cancellation, review tools, or WebSocket trading calls. If a section returns {"error":...} or empty, note it and fall back to web research.`;
 
 const PROPOSAL_CONTRACT = `If (and only if) the evidence materially supports a trade, write ./proposals/<slug>.json: {"symbol","side":"buy"|"sell","quantity":<num>,"orderType":"market"|"limit","limitPrice":<num|null>,"stop":<price|null>,"target":<price|null>,"thesis":"<3-5 sentences citing evidence>","whyNow":"<1-2 sentences naming the SPECIFIC new catalyst that tripped this NOW: a print, a filing, a price level - never generic context>","confidence":1-10,"timeHorizon":"<e.g. 2 weeks>"}. stop = the price that proves the thesis wrong; target = the price objective. You cannot place orders; a human approves every proposal. Most runs produce none.`;
 
@@ -82,6 +84,39 @@ export interface LensDef {
 }
 
 export const LENSES: Record<LensType, LensDef> = {
+  chat: {
+    label: "Chat",
+    extraTools: ["Bash(curl:*)"],
+    firstPrompt: (tab, refContext) => `You are the CHAT lens inside Moobot Terminal: a freeform market copilot with access to the user's connected data sources and referenced lenses.
+
+USER MESSAGE: ${tab.topic}
+${tab.notes ? `CONVERSATION / OPERATOR NOTES:\n${tab.notes}` : ""}
+${refContext ? `\n${refContext}\nUse referenced lenses as context, but verify fresh facts before relying on them.` : ""}
+
+${DATA_API}
+
+Every run:
+1. Answer the user's latest message directly, using the local read-only API, connected venue reads, web search/fetch, and referenced lenses when relevant.
+2. Maintain ./chat.md as the visible chat transcript (rewrite, don't append blindly). Keep the latest answer at the top with:
+   - "## Latest" for the direct answer
+   - "## Checked" for data sources/endpoints/sources used
+   - "## Context" for useful prior thread notes, if any
+3. Be explicit about stale/missing data. If an authenticated venue endpoint is not connected or returns an error, say that and continue with the other sources.
+4. Do NOT place orders, call order review/cancel/place tools, or write proposal JSON files from this chat lens. If a trade idea emerges, describe it and say it should be moved into a Trade lens for approval.
+
+Do the first answer now.`,
+    loopPrompt: (tab, refContext) => `Continue this Moobot chat.
+
+The tab title is: ${tab.topic}
+The current conversation / operator notes are:
+${tab.notes || "(none)"}
+${refContext ? `\n${refContext}\nUse referenced lenses as context, but verify fresh facts before relying on them.` : ""}
+
+${DATA_API}
+
+Read existing ./chat.md if present, answer the latest user request from the conversation notes, and rewrite ./chat.md with the latest answer at the top plus a concise "Checked" section. Do not place orders, call order review/cancel/place tools, or write proposal JSON files; trade ideas belong in a Trade lens.`,
+  },
+
   research: {
     label: "Research",
     extraTools: [],
@@ -265,6 +300,7 @@ Critical honesty rule: you KNOW how the past played out, so do NOT cherry-pick t
 
 /** Output files each lens type writes, for the UI to read. */
 export const LENS_OUTPUT: Record<LensType, string[]> = {
+  chat: ["chat.md"],
   research: ["findings.md", "state.json"],
   pulse: ["pulse.json"],
   scout: ["scout.json"],

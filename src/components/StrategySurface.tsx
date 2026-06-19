@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, CheckCircle2, FlaskConical, Loader2, MinusCircle, Radio, ShieldAlert, ShieldCheck, ShieldQuestion, XCircle } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, ChevronRight, FlaskConical, Loader2, MinusCircle, Radio, ShieldAlert, ShieldCheck, ShieldQuestion, XCircle } from "lucide-react";
 import {
   client,
   fmtMoney,
@@ -293,19 +293,23 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-4">
-      {/* Honesty banner */}
-      <div className="mb-3 flex gap-2 rounded-sm border border-amber/25 bg-amber-dim/30 px-3 py-2 text-[11px] leading-snug text-amber">
-        <ShieldQuestion className="mt-px h-4 w-4 shrink-0" />
-        <span>
+      {/* Verification verdict — certifies the RULES, not the idea. The single go/no-go line. */}
+      <TrustBadge grade={verification?.grade ?? "untested"} stale={stale} report={verification} />
+
+      {/* Honesty banner — collapsed; the verdict above is the headline */}
+      <details className="group mb-3 rounded-sm border border-amber/25 bg-amber-dim/20">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-amber">
+          <ShieldQuestion className="h-4 w-4 shrink-0" />
+          How to read a backtest
+          <ChevronRight className="ml-auto h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+        </summary>
+        <div className="px-3 pb-2.5 pl-9 text-[11px] leading-snug text-amber/90">
           A backtest replays these mechanical rules on past prices. It <strong>cannot</strong> undo the hindsight baked
           into the thesis itself — the model that wrote these rules already knew how the past played out. Treat the{" "}
           <strong>out-of-sample</strong> column as the real test; a big in→out drop-off means overfitting. The live LLM
           gate never runs in the backtest.
-        </span>
-      </div>
-
-      {/* Verification verdict — certifies the RULES, not the idea */}
-      <TrustBadge grade={verification?.grade ?? "untested"} stale={stale} report={verification} />
+        </div>
+      </details>
 
       {/* Rules */}
       <div className="mb-3 rounded-sm border border-hairline bg-panel">
@@ -383,7 +387,15 @@ export function StrategySurface({ tabId, spec, markdown }: Props) {
         </div>
       )}
 
-      {verification && <ReportCard report={verification} />}
+      {verification && (
+        <details className="group mb-3">
+          <summary className="mb-1.5 flex cursor-pointer list-none items-center gap-1.5 text-[10px] tracking-[0.14em] text-ink-faint uppercase">
+            <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+            Verification checks{verification.checks ? ` · ${verification.checks.length}` : ""}
+          </summary>
+          <ReportCard report={verification} />
+        </details>
+      )}
 
       {live && liveConsistency && <LiveStrip lc={liveConsistency} />}
 
@@ -450,7 +462,12 @@ function TrustBadge({ grade, stale, report }: { grade: Grade; stale: boolean; re
           </span>
         )}
       </div>
-      <div className="mt-0.5 pl-6 text-[10px] leading-snug opacity-80">{stale && report ? "Rules changed since this verdict — re-verify before relying on it." : m.sub}</div>
+      <div className="mt-0.5 pl-6 text-[10px] leading-snug opacity-80">
+        <span className="font-semibold">
+          {grade === "holds-up" && !stale ? "✓ Cleared for real-money go-live. " : "✗ Paper only. "}
+        </span>
+        {stale && report ? "Rules changed since this verdict — re-verify before relying on it." : m.sub}
+      </div>
     </div>
   );
 }

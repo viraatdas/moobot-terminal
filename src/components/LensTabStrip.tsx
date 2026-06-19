@@ -71,7 +71,6 @@ export function LensTabStrip({
               <span className="truncate">
                 {tab.topic || LENS_META[tab.type]?.label || tab.type}
               </span>
-              <span className="font-data text-[8px] uppercase opacity-55">{tab.type}</span>
               <span
                 role="button"
                 tabIndex={-1}
@@ -81,7 +80,7 @@ export function LensTabStrip({
                   onCloseLens(tab);
                 }}
                 className="ml-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-sm opacity-0 hover:bg-neg-dim hover:text-neg group-hover:opacity-100"
-                title="Close lens tab"
+                title="Close agent"
               >
                 <X className="h-3 w-3" />
               </span>
@@ -96,10 +95,10 @@ export function LensTabStrip({
                 ? "border-amber/40 bg-amber-dim text-amber"
                 : "border-transparent text-ink-faint hover:border-hairline hover:text-ink-dim"
             }`}
-            title="New empty lens tab"
+            title="New empty agent"
           >
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber" />
-            <span className="truncate">New Lens</span>
+            <span className="truncate">New Agent</span>
             <span className="font-data text-[8px] uppercase opacity-55">{draftLensTab.type}</span>
             <span
               role="button"
@@ -110,7 +109,7 @@ export function LensTabStrip({
                 onCloseDraft();
               }}
               className="ml-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-sm opacity-0 hover:bg-neg-dim hover:text-neg group-hover:opacity-100"
-              title="Close empty lens tab"
+              title="Close empty agent"
             >
               <X className="h-3 w-3" />
             </span>
@@ -119,7 +118,7 @@ export function LensTabStrip({
         <button
           onClick={onNewLens}
           className="grid h-7 w-7 shrink-0 place-items-center rounded-sm border border-hairline text-ink-faint hover:border-amber/40 hover:text-amber"
-          title="New lens tab (⌘T)"
+          title="New agent (⌘T)"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>

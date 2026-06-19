@@ -1,7 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { BarChart3, Zap } from "lucide-react";
 import { fmtMoney, fmtPct, type AccountSnapshot, type Position } from "../lib/client";
-import { ChainViewer } from "./ChainViewer";
 
 interface Props {
   snapshot: AccountSnapshot | null;
@@ -9,6 +8,7 @@ interface Props {
   agenticBuyingPower: number | null;
   onConnect: () => void;
   onOpenPortfolioHistory?: () => void;
+  onOpenChain?: (symbol: string) => void;
 }
 
 export function PortfolioRail({
@@ -17,9 +17,8 @@ export function PortfolioRail({
   agenticBuyingPower,
   onConnect,
   onOpenPortfolioHistory,
+  onOpenChain,
 }: Props) {
-  const [chainSymbol, setChainSymbol] = useState<string | null>(null);
-
   const pf = snapshot?.portfolio;
   const asOf = pf?.asOf ? new Date(pf.asOf) : null;
   const hasTodayPnl = pf?.dayPnl !== undefined && Number.isFinite(pf.dayPnl);
@@ -58,7 +57,6 @@ export function PortfolioRail({
               ) : (
                 <div className="mt-1 text-[12px] text-ink-faint">today: waiting for first snapshot</div>
               )}
-              <PnlLine amount={pf.pnl} pct={pf.pnlPercent} label="unrealized · all-time" />
             </>
           )}
         </button>
@@ -79,7 +77,7 @@ export function PortfolioRail({
           )}
           <div className="flex-1" />
           <button
-            onClick={() => setChainSymbol("")}
+            onClick={() => onOpenChain?.("")}
             className="flex items-center gap-1 rounded-sm border border-hairline px-2 py-0.5 text-[10px] text-ink-dim hover:border-amber/50 hover:text-amber"
           >
             <Zap className="h-3 w-3" />
@@ -103,13 +101,6 @@ export function PortfolioRail({
         </div>
       )}
 
-      {chainSymbol !== null && (
-        <ChainViewer
-          initialSymbol={chainSymbol || undefined}
-          onClose={() => setChainSymbol(null)}
-        />
-      )}
-
       {/* positions */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {snapshot && (
@@ -118,7 +109,7 @@ export function PortfolioRail({
             <Section
               title="Options"
               positions={snapshot.options}
-              onOpenChain={(sym) => setChainSymbol(sym)}
+              onOpenChain={onOpenChain}
             />
             <Section title="Crypto" positions={snapshot.crypto} />
             {snapshot.equities.length === 0 &&

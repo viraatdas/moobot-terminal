@@ -156,6 +156,7 @@ export class ResearchManager {
     type: LensType = "research",
     refs: string[] = [],
     engine: AgentEngine = "claude",
+    autoRun = true,
   ): ResearchTab {
     const tab: ResearchTab = {
       id: crypto.randomUUID().slice(0, 8),
@@ -177,7 +178,7 @@ export class ResearchManager {
     this.tabs.set(tab.id, tab);
     this.persist(tab);
     this.schedule(tab);
-    void this.run(tab.id);
+    if (autoRun) void this.run(tab.id);
     return tab;
   }
 
@@ -256,7 +257,7 @@ export class ResearchManager {
       : def.loopPrompt(tab, refContext);
     // Plugins (sources) only apply to research-style lenses that browse.
     let prompt =
-      tab.type === "research" || tab.type === "trade" || tab.type === "thesis"
+      tab.type === "chat" || tab.type === "research" || tab.type === "trade" || tab.type === "thesis"
         ? base + this.plugins.promptFragment()
         : base;
     if (runReason) {
@@ -368,7 +369,7 @@ export class ResearchManager {
 RUNNER SAFETY:
 - You are running through Codex inside this tab's workspace.
 - Use the local read-only APIs documented above for Robinhood data; do not attempt direct order placement, cancellation, review tools, or WebSocket trading calls.
-- Write only the files requested by this lens contract plus proposal JSON files when justified.`;
+- Write only the files requested by this lens contract, plus proposal JSON files only when this lens contract explicitly allows proposals.`;
       const common = [
         "--json",
         "--skip-git-repo-check",

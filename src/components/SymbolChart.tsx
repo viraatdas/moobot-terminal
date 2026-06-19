@@ -337,7 +337,8 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
                 if (e.key === "Enter") submitSymbol();
               }}
               onBlur={submitSymbol}
-              className="font-data min-w-0 flex-1 bg-transparent text-[11px] text-ink outline-none"
+              placeholder={activeSymbol}
+              className="font-data min-w-0 flex-1 bg-transparent text-[11px] text-ink outline-none placeholder:text-ink-faint"
             />
           </div>
         </div>
@@ -376,17 +377,6 @@ export function SymbolChart({ symbol, positions = [], onSymbolChange }: Props) {
                 <stop offset="100%" stopColor={positive ? "var(--color-pos)" : "var(--color-neg)"} stopOpacity="0" />
               </linearGradient>
             </defs>
-            {[0.2, 0.4, 0.6, 0.8].map((p) => (
-              <line
-                key={p}
-                x1="0"
-                x2={w}
-                y1={h * p}
-                y2={h * p}
-                stroke="var(--color-hairline)"
-                strokeDasharray="3 6"
-              />
-            ))}
             <path d={area} fill={`url(#${areaId})`} />
             <path
               d={line}

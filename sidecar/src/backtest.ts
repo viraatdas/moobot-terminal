@@ -72,6 +72,9 @@ export type StrategySpec = {
   maxPositions: number;
   llmGate: { mode: "off" | "live-only"; prompt: string } | null;
   live?: boolean;
+  /** Live-only: fill fractional shares (small accounts / pricey names). The backtest
+   * always sizes whole shares regardless, so verification is unaffected. */
+  fractional?: boolean;
   notes?: string;
 };
 
@@ -142,6 +145,7 @@ export function parseSpec(raw: unknown): StrategySpec | { error: string } {
     maxPositions,
     llmGate,
     live: r.live === true,
+    fractional: r.fractional === true,
     notes: typeof r.notes === "string" ? r.notes : "",
   };
 }
@@ -676,12 +680,17 @@ export function runBacktest(
 // never size differently from the backtest. Note: equityPct with equity <= 0
 // deterministically returns 0 (no fabricated fallback) — the caller skips the
 // entry rather than sizing off a guessed account value.
-export function sizeOrder(sizing: Sizing, equity: number, price: number): number {
+export function sizeOrder(sizing: Sizing, equity: number, price: number, fractional = false): number {
   if (price <= 0) return 0;
   if (sizing.type === "fixedShares") return Math.max(0, Math.floor(sizing.value));
-  if (sizing.type === "fixedNotional") return Math.max(0, Math.floor(sizing.value / price));
-  // equityPct
-  return Math.max(0, Math.floor(((equity * sizing.value) / 100) / price));
+  const shares =
+    sizing.type === "fixedNotional"
+      ? sizing.value / price
+      : ((equity * sizing.value) / 100) / price; // equityPct
+  // Whole shares for the backtest (integer-exact fills the verification depends on);
+  // fractional (to 4dp) for a live auto-trader on a small account, since the agentic
+  // broker fills fractional and $100 of a $300 stock would otherwise floor to zero.
+  return Math.max(0, fractional ? Math.floor(shares * 1e4) / 1e4 : Math.floor(shares));
 }
 
 function markOpen(

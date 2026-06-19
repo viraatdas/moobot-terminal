@@ -1,6 +1,15 @@
 // WebSocket client for the moobot sidecar.
 
-export type LensType = "research" | "pulse" | "scout" | "thesis" | "exposure" | "lattice" | "trade" | "strategy";
+export type LensType =
+  | "chat"
+  | "research"
+  | "pulse"
+  | "scout"
+  | "thesis"
+  | "exposure"
+  | "lattice"
+  | "trade"
+  | "strategy";
 export type AgentEngine = "claude" | "codex";
 
 export interface ResearchTab {
@@ -24,15 +33,74 @@ export const LENS_META: Record<
   LensType,
   { label: string; glyph: string; blurb: string; hasTopic: boolean }
 > = {
+  chat: { label: "Chat", glyph: "✦", blurb: "Ask anything across your book, market data, venues, web, and other lenses.", hasTopic: true },
   research: { label: "Research", glyph: "◎", blurb: "Build a sourced brief on one ticker, theme, or catalyst.", hasTopic: true },
-  pulse: { label: "Pulse", glyph: "◇", blurb: "Watch your book for fresh moves, headlines, and expiry risk.", hasTopic: true },
+  pulse: { label: "Watch", glyph: "◇", blurb: "Watch your book and scan for setups — pings you on fresh moves, headlines, and expiry risk.", hasTopic: true },
   scout: { label: "Scout", glyph: "◆", blurb: "Find new setups that fit your holdings and trading style.", hasTopic: true },
-  thesis: { label: "Thesis", glyph: "✛", blurb: "Check whether your positions actually express a belief.", hasTopic: true },
-  exposure: { label: "Exposure", glyph: "▦", blurb: "Show directional risk, concentration, and scenario P&L.", hasTopic: false },
+  thesis: { label: "Thesis", glyph: "✛", blurb: "Hold and track a conviction view; proposes a trade when the evidence is there.", hasTopic: true },
+  exposure: { label: "Portfolio", glyph: "▦", blurb: "X-ray your book — directional risk, concentration, and scenario P&L.", hasTopic: false },
   lattice: { label: "Lattice", glyph: "⬡", blurb: "Reveal hidden correlation clusters and one-bet risk.", hasTopic: false },
   trade: { label: "Trade", glyph: "▲", blurb: "Turn intent and tab context into approval-ready proposals.", hasTopic: true },
   strategy: { label: "Strategy", glyph: "⟐", blurb: "Co-author mechanical rules, backtest them, run them live.", hasTopic: true },
 };
+
+// The primary front door. Specialist variants stay reachable under "Advanced".
+export interface LensVerb {
+  primary: LensType;
+  label: string;
+  glyph: string;
+  blurb: string;
+  variants: LensType[];
+}
+export const LENS_VERBS: LensVerb[] = [
+  { primary: "chat", label: "Chat", glyph: LENS_META.chat.glyph, blurb: LENS_META.chat.blurb, variants: [] },
+  { primary: "research", label: "Research", glyph: LENS_META.research.glyph, blurb: LENS_META.research.blurb, variants: ["thesis", "scout"] },
+  { primary: "pulse", label: "Watch", glyph: LENS_META.pulse.glyph, blurb: LENS_META.pulse.blurb, variants: ["exposure", "lattice"] },
+  { primary: "trade", label: "Trade", glyph: LENS_META.trade.glyph, blurb: LENS_META.trade.blurb, variants: ["strategy"] },
+];
+// Flattened create order (primaries first within each verb), shared by all pickers.
+export const LENS_VERB_ORDER: LensType[] = LENS_VERBS.flatMap((v) => [v.primary, ...v.variants]);
+export const LENS_VARIANTS: LensType[] = LENS_VERBS.flatMap((v) => v.variants);
+export function verbForType(t: LensType): LensVerb {
+  return LENS_VERBS.find((v) => v.primary === t || v.variants.includes(t)) ?? LENS_VERBS[0];
+}
+
+// THE single auto-trader posture word (computed once on the backend in autotrade.status).
+// Every surface renders it through autoTradeStatusMeta so they can never disagree.
+export type AutoTradeStatus =
+  | "off"
+  | "paused"
+  | "paper"
+  | "blocked"
+  | "live-real"
+  | "armed-real"
+  | "exits-only"
+  | "armed";
+
+export function autoTradeStatusMeta(s: AutoTradeStatus | undefined | null): {
+  label: string;
+  tone: "pos" | "neg" | "amber" | "dim";
+  real: boolean;
+} {
+  switch (s) {
+    case "live-real":
+      return { label: "Live · real $", tone: "neg", real: true };
+    case "armed-real":
+      return { label: "Real · manual", tone: "neg", real: true };
+    case "exits-only":
+      return { label: "Real · exits only", tone: "amber", real: true };
+    case "blocked":
+      return { label: "Halted · action needed", tone: "amber", real: true };
+    case "paper":
+      return { label: "Paper", tone: "amber", real: false };
+    case "armed":
+      return { label: "Armed", tone: "amber", real: true };
+    case "paused":
+      return { label: "Paused", tone: "dim", real: false };
+    default:
+      return { label: "Off", tone: "dim", real: false };
+  }
+}
 
 export interface ResearchState {
   sentiment?: "bullish" | "bearish" | "neutral";

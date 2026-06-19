@@ -33,14 +33,28 @@ export interface ProposalQueueDeps {
   isPaper?: () => boolean;
   /** Append-only audit trail. */
   decisions?: DecisionLog;
-  /** Paper-only: auto-approve newly-ingested proposals with no human review. The
-   * SettingsStore returns true here ONLY in paper mode, so this can never reach
-   * real money. */
-  autoApprove?: () => boolean;
-  /** Account used for auto-approved orders (unused in paper, where nothing is sent). */
-  tradeAccount?: () => string;
+  /** Autonomous auto-trader config (null when off). Paper simulates; real placement
+   * requires allowReal — so a misconfig can never silently place a real order. */
+  autoTrade?: () => {
+    enabled: boolean;
+    /** When false, the strategy still files proposals but they wait for a human approve. */
+    autoApprove?: boolean;
+    allowReal: boolean;
+    account: string;
+    maxPerTrade: number;
+    maxPerDay: number;
+    dailyLossKill: number;
+    strategyTabId: string | null;
+    /** "strategy" = only the wired auto-trader tab's proposals; "all" = every pending
+     * proposal that lands (still bounded by the identical caps + kill-switch). */
+    approveScope?: "strategy" | "all";
+  } | null;
+  /** Live account day P&L, for the kill-switch (consulted in real mode only). */
+  accountDayPnl?: () => Promise<number>;
   /** Fired after an auto-approved proposal executes (e.g. to send a notification). */
   onTradeExecuted?: (p: TradeProposal) => void;
+  /** Auto-trader status line (a trade fired, a cap hit, the kill-switch tripped). */
+  onAutoActivity?: (msg: string) => void;
 }
 
 export interface TradeProposal {
@@ -162,6 +176,22 @@ function resolveOrder(
   return { effOrderType, effQuantity, effLimit, modified };
 }
 
+// Recognize a broker rejection that is an ACCOUNT-SETUP gate (KYC/onboarding the user
+// must finish) rather than a transient/market error — retrying these is pointless and
+// spammy. Returns the human reason + any actionable link Robinhood handed back.
+function accountSetupBlock(error: string | null | undefined): { reason: string; link: string | null } | null {
+  if (!error) return null;
+  const e = String(error);
+  const isSetup =
+    /invest(or|ing)\s+(profile|goals)|investment_profile|second_trade|answer some questions about your invest/i.test(e);
+  if (!isSetup) return null;
+  const link = e.match(/https:\/\/applink\.robinhood\.com\/\S+/)?.[0]?.replace(/[)\].,\s]+$/, "") ?? null;
+  return {
+    reason: "Robinhood needs the investor profile completed for this account before more trades",
+    link,
+  };
+}
+
 export class ProposalQueue {
   private proposals: TradeProposal[] = [];
   onChanged?: () => void;
@@ -169,6 +199,23 @@ export class ProposalQueue {
   private rh: RobinhoodGateway;
   private research: ResearchManager;
   private deps: ProposalQueueDeps;
+  /** Guards against two auto-approve passes (ingest + the periodic sweep) racing. */
+  private autoTrading = false;
+  /** Set when the broker hard-blocks placement for an ACCOUNT-SETUP reason (e.g. the
+   * agentic account's investor profile isn't complete). Halts further auto-trade
+   * attempts so the runtime doesn't spam doomed orders every tick, and carries the
+   * actionable message + link to the UI. Cleared by the user once they've resolved it. */
+  private autoTradeBlock: { reason: string; link: string | null; at: number } | null = null;
+
+  /** The current account-setup block, if any (surfaced in autotrade.status). */
+  autoTradeBlocked(): { reason: string; link: string | null; at: number } | null {
+    return this.autoTradeBlock;
+  }
+
+  /** Clear the account-setup block so auto-trade resumes (after the user resolves it). */
+  clearAutoTradeBlock(): void {
+    this.autoTradeBlock = null;
+  }
 
   constructor(rh: RobinhoodGateway, research: ResearchManager, deps: ProposalQueueDeps = {}) {
     this.rh = rh;
@@ -298,20 +345,131 @@ export class ProposalQueue {
       }
     }
     this.persist();
+    await this.autoTrade();
+  }
 
-    // Paper-only auto-trader: approve newly-filed proposals without human review.
-    // autoApprove() is true ONLY in paper mode (enforced in SettingsStore), and
-    // approve() in paper simulates the fill — so this can never place a real order.
-    if (this.deps.autoApprove?.() && this.deps.isPaper?.()) {
-      const acct = this.deps.tradeAccount?.() ?? "";
-      for (const p of added) {
+  /** Public entry point for the periodic self-healing sweep (called from the strategy
+   * runtime tick). Re-attempts any still-pending in-scope proposals so a transient skip
+   * (a snapshot blip, a closed market) recovers on its own instead of orphaning. */
+  async autoApproveSweep() {
+    await this.autoTrade();
+  }
+
+  // Autonomous auto-trader: approve in-scope PENDING proposals within hard caps. Runs
+  // both right after ingest (fresh signals) and on a periodic sweep (self-healing), so a
+  // proposal is never permanently orphaned by a one-off skip. In paper mode approve()
+  // simulates; REAL placement requires the explicit allowReal override AND passing the
+  // daily-loss kill-switch — so a misconfig can never silently place real orders.
+  private async autoTrade() {
+    if (this.autoTrading) return; // never let ingest + the sweep double-approve
+    const cfg = this.deps.autoTrade?.();
+    if (!cfg || !cfg.enabled) return;
+    // MANUAL mode: the strategy keeps filing proposals (they sit pending in the rail for
+    // a human approve) — we just don't auto-approve them. Every other guard still applies
+    // when the user does approve.
+    if (cfg.autoApprove === false) return;
+    // "all" scope auto-approves EVERY pending proposal; "strategy" (default) covers only
+    // the wired auto-trader tab. Both run within the identical caps + kill-switch below.
+    const scope = cfg.approveScope === "all" ? "all" : "strategy";
+    // Fail-closed: in "strategy" scope, refuse unless a specific strategy tab is wired —
+    // a null strategyTabId would otherwise sweep up EVERY tab's proposals. "all" scope
+    // is the deliberate opt-in to exactly that breadth, so it doesn't need a tab.
+    if (scope === "strategy" && !cfg.strategyTabId) {
+      this.deps.onAutoActivity?.("auto-trade is enabled but no strategy is wired — refusing to trade.");
+      return;
+    }
+    const inScope = (tabId: string) => scope === "all" || tabId === cfg.strategyTabId;
+    // Candidates = still-PENDING in-scope proposals from the last 6h (a stale signal must
+    // not suddenly fill hours later at an unrelated price). This is the self-healing set:
+    // a fresh ingest and a periodic sweep both land here, so a one-off skip recovers.
+    const FRESH_MS = 6 * 60 * 60_000;
+    const now = Date.now();
+    const candidates = this.proposals.filter(
+      (p) => p.status === "pending" && inScope(p.tabId) && now - Date.parse(p.createdAt) < FRESH_MS,
+    );
+    if (candidates.length === 0) return;
+    // Halt while an account-setup block stands — re-attempting would just re-fail and
+    // spam the broker. The user clears it after resolving (e.g. investor profile).
+    if (this.autoTradeBlock) {
+      this.deps.onAutoActivity?.(`auto-trade halted — ${this.autoTradeBlock.reason} (resolve, then resume).`);
+      return;
+    }
+
+    this.autoTrading = true;
+    try {
+      const paper = this.deps.isPaper?.() === true;
+      if (!paper && !cfg.allowReal) {
+        this.deps.onAutoActivity?.("auto-trade armed but the real-money override is OFF — not placing.");
+        return;
+      }
+      if (!paper && !cfg.account) {
+        this.deps.onAutoActivity?.("auto-trade armed for real money but no account is set — refusing.");
+        return;
+      }
+      if (!paper && this.deps.accountDayPnl) {
         try {
-          const done = await this.approve(p.id, acct);
-          if (done.status === "approved") this.deps.onTradeExecuted?.(done);
-        } catch (err) {
-          console.error(`[auto-approve] ${p.id}: ${err}`);
+          const dayPnl = await this.deps.accountDayPnl();
+          if (dayPnl < -Math.abs(cfg.dailyLossKill)) {
+            this.deps.onAutoActivity?.(`KILL-SWITCH: account down $${dayPnl.toFixed(0)} today (limit −$${Math.abs(cfg.dailyLossKill)}) — auto-trade halted for the day.`);
+            return;
+          }
+        } catch {
+          this.deps.onAutoActivity?.("kill-switch check failed (no snapshot after retries) — skipping real auto-trade this pass; will retry next sweep.");
+          return;
         }
       }
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      // Count fills toward the daily cap — only in the CURRENT mode (paper trial fills must
+      // not consume the real-money daily budget, nor the reverse), scoped like the loop.
+      let todayCount = this.proposals.filter(
+        (x) =>
+          inScope(x.tabId) &&
+          x.status === "approved" &&
+          x.execution &&
+          x.execution.paper === paper &&
+          Date.parse(x.execution.placedAt) >= startOfDay.getTime(),
+      ).length;
+      for (const p of candidates) {
+        if (p.status !== "pending") continue; // may have changed earlier this pass
+        if (todayCount >= cfg.maxPerDay) {
+          this.deps.onAutoActivity?.(`auto-trade paused: hit the daily cap of ${cfg.maxPerDay} trades.`);
+          break;
+        }
+        // An unknown entry price is a HARD skip — never a $0 notional that silently
+        // slips past the per-trade dollar cap (the main risk control on a small account).
+        if (p.entryPrice == null || !Number.isFinite(p.entryPrice) || p.entryPrice <= 0) {
+          this.deps.onAutoActivity?.(`skipped ${p.symbol}: no entry price to size-check against the $${cfg.maxPerTrade}/trade cap.`);
+          continue;
+        }
+        const notional = p.entryPrice * p.quantity;
+        if (notional > cfg.maxPerTrade * 1.1) {
+          this.deps.onAutoActivity?.(`skipped ${p.symbol}: ~$${notional.toFixed(0)} exceeds the $${cfg.maxPerTrade}/trade cap.`);
+          continue;
+        }
+        try {
+          const done = await this.approve(p.id, cfg.account || "");
+          if (done.status === "approved") {
+            todayCount += 1;
+            this.deps.onTradeExecuted?.(done);
+            this.deps.onAutoActivity?.(`auto-${paper ? "paper-" : ""}traded ${done.side} ${done.execution?.quantity} ${done.symbol} @ $${done.execution?.fillPrice ?? "?"}`);
+          } else {
+            this.deps.onAutoActivity?.(`auto-trade ${p.symbol} ${done.status}: ${done.error ?? ""}`);
+            // An ACCOUNT-SETUP rejection (investor profile / onboarding) won't fix itself
+            // by retrying — record it as a block and stop this pass so we don't spam.
+            const block = accountSetupBlock(done.error);
+            if (block) {
+              this.autoTradeBlock = { ...block, at: Date.now() };
+              this.deps.onAutoActivity?.(`auto-trade halted — ${block.reason}`);
+              break;
+            }
+          }
+        } catch (err) {
+          console.error(`[auto-trade] ${p.id}: ${err}`);
+        }
+      }
+    } finally {
+      this.autoTrading = false;
     }
   }
 

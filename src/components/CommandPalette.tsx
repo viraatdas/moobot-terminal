@@ -24,13 +24,13 @@ import {
 } from "lucide-react";
 import {
   LENS_META,
+  LENS_VERBS,
   type AccountSnapshot,
   type LensType,
   type ResearchTab,
 } from "../lib/client";
 import {
   collectCommandPaletteSymbols,
-  CREATE_LENS_ORDER,
   DEFAULT_COMMAND_PALETTE_SECTIONS,
   describeCommandSymbol,
   filterCommandPaletteCommands,
@@ -432,17 +432,16 @@ function buildCommands({
     run: () => onCreateLens?.(),
   });
 
-  for (const lensType of CREATE_LENS_ORDER) {
-    const meta = LENS_META[lensType];
+  for (const verb of LENS_VERBS) {
     commands.push({
-      id: `research.create.${lensType}`,
+      id: `research.create.${verb.primary}`,
       group: "Research",
-      title: `Create ${meta.label} lens`,
-      subtitle: meta.blurb,
-      keywords: ["new", "create", "research", "lens", "agent", lensType, meta.label],
-      icon: lensType === "pulse" ? "spark" : "lens",
+      title: `Create ${verb.label} lens`,
+      subtitle: verb.blurb,
+      keywords: ["new", "create", "research", "lens", "agent", verb.primary, verb.label],
+      icon: verb.primary === "pulse" ? "spark" : "lens",
       disabled: !onCreateLens,
-      run: () => onCreateLens?.(lensType),
+      run: () => onCreateLens?.(verb.primary),
     });
   }
 

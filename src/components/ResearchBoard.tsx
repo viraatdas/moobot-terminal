@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { marked } from "marked";
 import {
   Activity,
+  ChevronRight,
   Compass,
   Crosshair,
   FlaskConical,
+  MessageSquareText,
   Network,
   Pause,
   Play,
@@ -18,6 +20,8 @@ import {
 import {
   client,
   LENS_META,
+  LENS_VERBS,
+  LENS_VARIANTS,
   type AgentEngine,
   type LensType,
   type ResearchState,
@@ -62,6 +66,7 @@ const SENTIMENT_STYLE: Record<string, string> = {
 
 function LensIcon({ type, className = "h-3.5 w-3.5" }: { type: LensType; className?: string }) {
   const cls = className;
+  if (type === "chat") return <MessageSquareText className={cls} />;
   if (type === "pulse") return <Activity className={cls} />;
   if (type === "scout") return <Compass className={cls} />;
   if (type === "thesis") return <Crosshair className={cls} />;
@@ -96,7 +101,7 @@ export function ResearchBoard({
     lens: Record<string, any>;
   }>({ markdown: "", state: null, panels: [], lens: {} });
   const [creating, setCreating] = useState(false);
-  const [createType, setCreateType] = useState<LensType>("research");
+  const [createType, setCreateType] = useState<LensType>("chat");
 
   const [autoBusy, setAutoBusy] = useState(false);
   const active = creatingOnly ? null : (tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null);
@@ -107,7 +112,7 @@ export function ResearchBoard({
 
   useEffect(() => {
     if (!createLensRequest) return;
-    setCreateType(createLensRequest.type ?? "research");
+    setCreateType(createLensRequest.type ?? "chat");
     setCreating(true);
   }, [createLensRequest]);
 
@@ -219,11 +224,11 @@ export function ResearchBoard({
           ))}
           <button
             onClick={() => {
-              setCreateType("research");
+              setCreateType("chat");
               setCreating(true);
             }}
             className="shrink-0 px-4 text-[16px] text-ink-faint hover:text-amber"
-            title="New lens tab (⌘T)"
+            title="New agent (⌘T)"
           >
             <Plus className="h-4 w-4" />
           </button>
@@ -231,7 +236,7 @@ export function ResearchBoard({
             onClick={() => void autoSetup()}
             disabled={autoBusy}
             className="flex shrink-0 items-center gap-1.5 px-3 text-[11px] font-medium text-ink-faint hover:text-amber disabled:opacity-50"
-            title="Create or refresh Pulse + Exposure + Lattice"
+            title="Create or refresh Watch + Portfolio + Lattice"
           >
             <Sparkles className="h-3.5 w-3.5" />
             {autoBusy ? "…" : "Auto"}
@@ -271,13 +276,11 @@ export function ResearchBoard({
           <div className="font-wordmark text-[26px] italic text-ink-faint">moobot lenses</div>
           <p className="max-w-100 text-center text-[13px] leading-relaxed text-ink-faint">
             Open a lens onto your book and the market. Each tab is an agent that works
-            continuously: <span className="text-ink-dim">Research</span> a topic,{" "}
-            <span className="text-ink-dim">Pulse</span> what's moving,{" "}
-            <span className="text-ink-dim">Exposure</span> &{" "}
-            <span className="text-ink-dim">Lattice</span> for risk and correlation,{" "}
-            <span className="text-ink-dim">Scout</span> for new ideas,{" "}
-            <span className="text-ink-dim">Thesis</span> to test a belief, and{" "}
-            <span className="text-ink-dim">Trade</span> to turn it all into proposals.
+            continuously: <span className="text-ink-dim">Chat</span> across your data,{" "}
+            <span className="text-ink-dim">Research</span> a topic,{" "}
+            <span className="text-ink-dim">Watch</span> your book, or{" "}
+            <span className="text-ink-dim">Trade</span> to turn it into approval-ready
+            proposals. More specialised lenses live under “Advanced”.
           </p>
           <div className="mt-2 flex gap-2">
             <button
@@ -289,7 +292,7 @@ export function ResearchBoard({
             </button>
             <button
               onClick={() => {
-                setCreateType("research");
+                setCreateType("chat");
                 setCreating(true);
               }}
               className="rounded-sm border border-hairline px-4 py-1.5 text-[12px] font-medium text-ink-dim hover:border-hairline-2 hover:text-ink"
@@ -298,7 +301,7 @@ export function ResearchBoard({
             </button>
           </div>
           <p className="text-[10.5px] text-ink-faint">
-            Auto spins up Pulse · Exposure · Lattice on your book.
+            Auto spins up Watch · Portfolio · Lattice on your book.
           </p>
         </div>
       )}
@@ -368,7 +371,13 @@ export function ResearchBoard({
                 )}
               </div>
             ) : (
-              <LensSurface type={active.type} lens={findings.lens} tabId={active.id} />
+              <LensSurface
+                type={active.type}
+                lens={findings.lens}
+                tabId={active.id}
+                tab={active}
+                onChanged={onTabsChanged}
+              />
             )}
           </div>
         </div>
@@ -526,7 +535,10 @@ function RunControls({
   );
 }
 
-const LENS_ORDER: LensType[] = ["research", "pulse", "scout", "thesis", "exposure", "lattice", "trade", "strategy"];
+// Creation offers primary verbs up front; specialist variants
+// (thesis, scout, exposure, lattice, strategy) live under "Advanced".
+const isVariantType = (t: LensType) => LENS_VARIANTS.includes(t);
+const defaultIntervalForType = (t: LensType) => (t === "chat" ? 0 : 30);
 
 function NewTabForm({
   tabs,
@@ -542,9 +554,10 @@ function NewTabForm({
   const [type, setType] = useState<LensType>(initialType);
   const [topic, setTopic] = useState("");
   const [notes, setNotes] = useState("");
-  const [interval, setIntervalMin] = useState(30);
+  const [interval, setIntervalMin] = useState(defaultIntervalForType(initialType));
   const [refs, setRefs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(isVariantType(initialType));
   const ref = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -553,11 +566,15 @@ function NewTabForm({
 
   useEffect(() => {
     setType(initialType);
+    setIntervalMin(defaultIntervalForType(initialType));
+    if (isVariantType(initialType)) setAdvancedOpen(true);
   }, [initialType]);
 
   const meta = LENS_META[type];
   const topicLabel =
-    type === "strategy"
+    type === "chat"
+      ? "Ask anything across your book, venues, markets, web, and tabs"
+      : type === "strategy"
       ? "Strategy intent, e.g. buy semis on a 50/200 golden cross, trail an 8% stop"
       : type === "trade"
       ? "Intent, e.g. hedge my tech concentration, add to NVDA on dips"
@@ -591,26 +608,63 @@ function NewTabForm({
 
   return (
     <div className="border-b border-hairline bg-panel px-5 py-4">
-      {/* lens type picker */}
-      <div className="mb-3 grid grid-cols-[repeat(auto-fit,minmax(78px,1fr))] gap-1.5">
-        {LENS_ORDER.map((t) => {
-          const m = LENS_META[t];
-          return (
-            <button
-              key={t}
-              onClick={() => setType(t)}
-              title={`${m.label}: ${m.blurb}`}
-              className={`flex flex-col items-center gap-1 rounded-sm border px-1 py-2 transition-colors ${
-                type === t
-                  ? "border-amber/50 bg-amber-dim text-amber"
-                  : "border-hairline text-ink-faint hover:text-ink-dim"
-              }`}
-            >
-              <LensIcon type={t} className="h-4 w-4" />
-              <span className="text-[10px] font-medium">{m.label}</span>
-            </button>
-          );
-        })}
+      {/* lens type picker: primary verbs, specialists under Advanced */}
+      <div className="mb-3">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(92px,1fr))] gap-1.5">
+          {LENS_VERBS.map((v) => {
+            const active = type === v.primary || v.variants.includes(type);
+            return (
+              <button
+                key={v.primary}
+                onClick={() => {
+                  setType(v.primary);
+                  setIntervalMin(defaultIntervalForType(v.primary));
+                }}
+                title={`${v.label}: ${v.blurb}`}
+                className={`flex flex-col items-center gap-1 rounded-sm border px-1 py-2.5 transition-colors ${
+                  active
+                    ? "border-amber/50 bg-amber-dim text-amber"
+                    : "border-hairline text-ink-faint hover:text-ink-dim"
+                }`}
+              >
+                <LensIcon type={v.primary} className="h-4 w-4" />
+                <span className="text-[11px] font-medium">{v.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => setAdvancedOpen((o) => !o)}
+          className="mt-2 flex items-center gap-1 text-[9.5px] tracking-[0.14em] uppercase text-ink-faint hover:text-ink-dim"
+        >
+          <ChevronRight className={`h-3 w-3 transition-transform ${advancedOpen ? "rotate-90" : ""}`} />
+          Advanced
+        </button>
+        {advancedOpen && (
+          <div className="mt-1.5 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5">
+            {LENS_VARIANTS.map((t) => {
+              const m = LENS_META[t];
+              return (
+                <button
+                  key={t}
+                  onClick={() => {
+                    setType(t);
+                    setIntervalMin(defaultIntervalForType(t));
+                  }}
+                  title={`${m.label}: ${m.blurb}`}
+                  className={`flex items-center justify-center gap-1.5 rounded-sm border px-1.5 py-1.5 ${
+                    type === t
+                      ? "border-amber/50 bg-amber-dim text-amber"
+                      : "border-hairline text-ink-faint hover:text-ink-dim"
+                  }`}
+                >
+                  <LensIcon type={t} className="h-3.5 w-3.5" />
+                  <span className="text-[10px] font-medium">{m.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <div className="mb-3 flex items-start gap-2 rounded-sm border border-hairline bg-bg px-3 py-2">
         <div className="mt-0.5 text-amber">
@@ -655,7 +709,7 @@ function NewTabForm({
       </div>
 
       {/* @-reference other tabs as context. */}
-      {(["research", "scout", "thesis", "trade", "strategy"] as LensType[]).includes(type) &&
+      {(["chat", "research", "scout", "thesis", "trade", "strategy"] as LensType[]).includes(type) &&
         tabs.length > 0 && (
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-[9.5px] tracking-[0.16em] uppercase text-ink-faint">

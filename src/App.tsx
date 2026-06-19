@@ -21,8 +21,11 @@ import { ChainViewer } from "./components/ChainViewer";
 import { Cockpit } from "./components/Cockpit";
 import { PortfolioPerformanceModal } from "./components/PortfolioPerformanceModal";
 import { TrackRecordModal } from "./components/TrackRecordModal";
+import { ConfirmDialog, type ConfirmRequest } from "./components/ConfirmDialog";
+import { ConnectionsModal } from "./components/ConnectionsModal";
 import { CommandPalette } from "./components/CommandPalette";
 import { LensTabStrip } from "./components/LensTabStrip";
+import { NewLensLauncher, type LensTemplateId } from "./components/NewLensLauncher";
 import type { CommandPaletteSectionTarget } from "./components/commandPaletteModel";
 
 export interface FeedLine {
@@ -66,6 +69,27 @@ function normalizeTicker(value: string | null | undefined): string | null {
   return clean || null;
 }
 
+function normalizeTopic(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function templateSpecs(template: LensTemplateId): Array<{ type: LensType; topic: string; intervalMinutes: number }> {
+  if (template === "starter-cockpit") {
+    return [
+      { type: "pulse", topic: "Market + my book", intervalMinutes: 30 },
+      { type: "exposure", topic: "My risk", intervalMinutes: 60 },
+      { type: "lattice", topic: "Correlation", intervalMinutes: 60 },
+    ];
+  }
+  if (template === "book-watch") {
+    return [{ type: "pulse", topic: "Market + my book", intervalMinutes: 30 }];
+  }
+  if (template === "portfolio-risk") {
+    return [{ type: "exposure", topic: "My risk", intervalMinutes: 60 }];
+  }
+  return [{ type: "lattice", topic: "Correlation", intervalMinutes: 60 }];
+}
+
 function shortcutDigit(event: KeyboardEvent): number | null {
   if (/^Digit[1-9]$/.test(event.code)) return Number(event.code.slice("Digit".length));
   if (/^[1-9]$/.test(event.key)) return Number(event.key);
@@ -88,6 +112,8 @@ export default function App() {
   const [showAlerts, setShowAlerts] = useState(false);
   const [alertSymbol, setAlertSymbol] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
+  const [showMarketConnections, setShowMarketConnections] = useState(false);
+  const [showNewLensLauncher, setShowNewLensLauncher] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [cloud, setCloud] = useState(false);
   const [chainSymbol, setChainSymbol] = useState<string | null>(null);
@@ -96,6 +122,13 @@ export default function App() {
   const [showTrackRecord, setShowTrackRecord] = useState(false);
   const [paperMode, setPaperMode] = useState(false);
   const [eventTriggers, setEventTriggers] = useState(true);
+  // Which strategy tab the auto-trader runs on + whether it's armed — so closing that
+  // tab warns "this is running, it'll stop" instead of the generic delete prompt.
+  const [autoTradeCfg, setAutoTradeCfg] = useState<{
+    strategyTabId: string | null;
+    enabled: boolean;
+    allowReal: boolean;
+  } | null>(null);
   const [activeSymbol, setActiveSymbol] = useState(
     () => localStorage.getItem("moobot.activeSymbol.v1") || "SPY",
   );
@@ -109,6 +142,7 @@ export default function App() {
   });
   const [activeLensId, setActiveLensId] = useState<string | null>(null);
   const [draftLensTab, setDraftLensTab] = useState<{ id: number; type: LensType } | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const closingLensIdRef = useRef<string | null>(null);
   const [createLensRequest, setCreateLensRequest] = useState<{
     id: number;
@@ -168,14 +202,41 @@ export default function App() {
 
   // Decode the settings wire shape (presence/absence -> booleans) in one place,
   // shared by the initial fetch and the live settings.changed event.
-  const applySettings = useCallback((s: { paperMode?: boolean; eventTriggers?: boolean } | null | undefined) => {
-    setPaperMode(s?.paperMode === true);
-    setEventTriggers(s?.eventTriggers !== false);
-  }, []);
+  const applySettings = useCallback(
+    (
+      s:
+        | {
+            paperMode?: boolean;
+            eventTriggers?: boolean;
+            autoTrade?: { strategyTabId?: string | null; enabled?: boolean; allowReal?: boolean };
+          }
+        | null
+        | undefined,
+    ) => {
+      setPaperMode(s?.paperMode === true);
+      setEventTriggers(s?.eventTriggers !== false);
+      setAutoTradeCfg(
+        s?.autoTrade
+          ? {
+              strategyTabId: s.autoTrade.strategyTabId ?? null,
+              enabled: s.autoTrade.enabled === true,
+              allowReal: s.autoTrade.allowReal === true,
+            }
+          : null,
+      );
+    },
+    [],
+  );
 
   const refreshSettings = useCallback(async () => {
     try {
-      applySettings(await client.request<{ paperMode?: boolean; eventTriggers?: boolean }>("settings.get"));
+      applySettings(
+        await client.request<{
+          paperMode?: boolean;
+          eventTriggers?: boolean;
+          autoTrade?: { strategyTabId?: string | null; enabled?: boolean; allowReal?: boolean };
+        }>("settings.get"),
+      );
     } catch {}
   }, [applySettings]);
 
@@ -253,6 +314,20 @@ export default function App() {
       if (event === "proposals.changed") setProposals(payload.proposals);
       if (event === "settings.changed") {
         applySettings(payload?.settings);
+      }
+      if (event === "notify" && payload?.title) {
+        // Post a NATIVE notification from the app so macOS shows the Moobot icon
+        // (the sidecar's osascript fallback would show the Script Editor icon).
+        void (async () => {
+          try {
+            const n = await import("@tauri-apps/plugin-notification");
+            let ok = await n.isPermissionGranted();
+            if (!ok) ok = (await n.requestPermission()) === "granted";
+            if (ok) n.sendNotification({ title: String(payload.title), body: String(payload.body ?? "") });
+          } catch {
+            /* not running in Tauri, or plugin unavailable */
+          }
+        })();
       }
       if (event === "research") {
         const ev = payload as ResearchEvent;
@@ -371,12 +446,67 @@ export default function App() {
     [activeSymbol, selectSymbol],
   );
 
-  const requestNewLens = useCallback((type: LensType = "research") => {
+  const openNewLensLauncher = useCallback(() => {
+    setShowNewLensLauncher(true);
+  }, []);
+
+  const activateLensId = useCallback((tabId: string) => {
+    setDraftLensTab(null);
+    setCreateLensRequest(null);
+    setActiveLensId(tabId);
+    setCenterMode("lens");
+    setSelectLensRequest({ id: Date.now(), tabId });
+  }, []);
+
+  const requestNewLens = useCallback((type: LensType) => {
     const id = Date.now();
     setCenterMode("lens");
     setDraftLensTab({ id, type });
     setCreateLensRequest({ id, type });
   }, []);
+
+  const createRegularChat = useCallback(async () => {
+    const tab = await client.request<ResearchTab>("research.create", {
+      type: "chat",
+      topic: "Chat",
+      notes: "",
+      intervalMinutes: 0,
+      refs: [],
+      engine: agentEngine,
+      autoRun: false,
+    });
+    await refreshResearch();
+    activateLensId(tab.id);
+  }, [activateLensId, agentEngine, refreshResearch]);
+
+  const createLensTemplate = useCallback(
+    async (template: LensTemplateId) => {
+      let firstId: string | null = null;
+      for (const spec of templateSpecs(template)) {
+        const existing = tabs.find(
+          (tab) => tab.type === spec.type && normalizeTopic(tab.topic) === normalizeTopic(spec.topic),
+        );
+        if (existing) {
+          firstId = firstId ?? existing.id;
+          await client.request("research.update", {
+            id: existing.id,
+            intervalMinutes: spec.intervalMinutes,
+            paused: false,
+          });
+          await client.request("research.run", { id: existing.id });
+          continue;
+        }
+        const tab = await client.request<ResearchTab>("research.create", {
+          ...spec,
+          engine: agentEngine,
+        });
+        firstId = firstId ?? tab.id;
+      }
+      await refreshResearch();
+      if (firstId) activateLensId(firstId);
+    },
+    [activateLensId, agentEngine, refreshResearch, tabs],
+  );
 
   const cockpitSections = useMemo<CommandPaletteSectionTarget[]>(
     () => [
@@ -485,11 +615,10 @@ export default function App() {
     return true;
   }, [activeLensId, tabs]);
 
-  const closeLensTab = useCallback(
-    (tab: ResearchTab): boolean => {
-      if (closingLensIdRef.current === tab.id) return true;
-      const label = tab.topic || LENS_META[tab.type]?.label || "lens";
-      if (!confirm(`Close and delete research tab "${label}"?`)) return true;
+  // The actual removal (after the user confirms). Deletes the tab + navigates away.
+  const doRemoveLens = useCallback(
+    (tab: ResearchTab) => {
+      if (closingLensIdRef.current === tab.id) return;
       const closingIndex = tabs.findIndex((candidate) => candidate.id === tab.id);
       const next = tabs[closingIndex + 1] ?? tabs[closingIndex - 1] ?? null;
       const closingActive = activeLensId === tab.id || currentActiveLens?.id === tab.id;
@@ -511,9 +640,51 @@ export default function App() {
         .finally(() => {
           if (closingLensIdRef.current === tab.id) closingLensIdRef.current = null;
         });
-      return true;
     },
     [activeLensId, currentActiveLens?.id, refreshResearch, tabs],
+  );
+
+  const closeLensTab = useCallback(
+    (tab: ResearchTab): boolean => {
+      if (closingLensIdRef.current === tab.id) return true;
+      const label = tab.topic || LENS_META[tab.type]?.label || "lens";
+      // Escalating warning so the user is never surprised that closing a tab stops
+      // something live — especially the armed auto-trader. Uses the in-app dialog (NOT
+      // window.confirm, which is unreliable in the Tauri webview and silently cancels).
+      const isAutoTrader = autoTradeCfg?.enabled === true && autoTradeCfg.strategyTabId === tab.id;
+      const isStrategy = tab.type === "strategy";
+      const isRunning = tab.lastRunStatus === "running";
+      let title = "Close tab";
+      let body: string;
+      let danger = false;
+      if (isAutoTrader) {
+        const mode = !paperMode && autoTradeCfg?.allowReal ? "REAL money" : paperMode ? "paper" : "armed";
+        title = "Stop the auto-trader?";
+        danger = true;
+        body =
+          `The auto-trader is RUNNING on this tab (${mode}).\n\n` +
+          `Closing it deletes the strategy and STOPS autonomous trading — no new trades will be placed. ` +
+          `Orders already placed are unaffected.`;
+      } else if (isStrategy) {
+        title = "Close strategy?";
+        danger = true;
+        body = `"${label}" is a trading strategy. Closing this tab deletes it and stops it from running.`;
+      } else if (isRunning) {
+        title = "Close running agent?";
+        body = `A research agent is running in "${label}" right now. Closing stops it and deletes the tab.`;
+      } else {
+        body = `Close and delete research tab "${label}"?`;
+      }
+      setConfirmRequest({
+        title,
+        body,
+        confirmLabel: isAutoTrader ? "Stop & close" : "Close",
+        danger,
+        onConfirm: () => doRemoveLens(tab),
+      });
+      return true;
+    },
+    [autoTradeCfg, doRemoveLens, paperMode],
   );
 
   const finishDraftLensTab = useCallback(
@@ -534,7 +705,7 @@ export default function App() {
   const runAppShortcut = useCallback(
     (command: AppShortcutCommand): boolean => {
       if (command === "new-tab") {
-        requestNewLens("research");
+        openNewLensLauncher();
         return true;
       }
 
@@ -608,7 +779,7 @@ export default function App() {
       closeLensTab,
       currentActiveLens,
       draftLensTab,
-      requestNewLens,
+      openNewLensLauncher,
       selectLensTab,
       tabs,
     ],
@@ -698,6 +869,7 @@ export default function App() {
         pendingCount={pendingCount}
         onOpenAlerts={() => openAlerts(activeSymbol)}
         onOpenConnection={() => setShowConnection(true)}
+        onOpenMarketConnections={() => setShowMarketConnections(true)}
         cloud={cloud}
         agentEngine={agentEngine}
         onAgentEngineChange={selectAgentEngine}
@@ -715,6 +887,10 @@ export default function App() {
             agenticBuyingPower={agenticBuyingPower}
             onConnect={connectRobinhood}
             onOpenPortfolioHistory={() => setShowPortfolioHistory(true)}
+            onOpenChain={(symbol) => {
+              if (symbol) selectSymbol(symbol);
+              setChainSymbol(symbol);
+            }}
           />
         </div>
         <div className="col-in col-in-2 flex min-h-0 flex-col">
@@ -731,7 +907,7 @@ export default function App() {
               setCreateLensRequest({ id: draft.id, type: draft.type });
             }}
             onCloseDraft={closeDraftLensTab}
-            onNewLens={() => requestNewLens("research")}
+            onNewLens={openNewLensLauncher}
             onOpenCommandPalette={() => setCommandPaletteOpen(true)}
           />
           <div className="flex min-h-0 flex-1 flex-col">
@@ -788,6 +964,9 @@ export default function App() {
         <AlertsModal initialSymbol={alertSymbol ?? activeSymbol} onClose={() => setShowAlerts(false)} />
       )}
       {showConnection && <ConnectionModal onClose={() => setShowConnection(false)} />}
+      {showMarketConnections && (
+        <ConnectionsModal onClose={() => setShowMarketConnections(false)} paperMode={paperMode} />
+      )}
       {showPortfolioHistory && (
         <PortfolioPerformanceModal
           accountNumber={snapshot?.accountNumber || accountNumber}
@@ -798,6 +977,14 @@ export default function App() {
         <ChainViewer initialSymbol={chainSymbol || undefined} onClose={() => setChainSymbol(null)} />
       )}
       {showTrackRecord && <TrackRecordModal onClose={() => setShowTrackRecord(false)} />}
+      <NewLensLauncher
+        open={showNewLensLauncher}
+        onClose={() => setShowNewLensLauncher(false)}
+        onCreateChat={createRegularChat}
+        onCreateTemplate={createLensTemplate}
+        onOpenAgent={requestNewLens}
+      />
+      <ConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
       <CommandPalette
         open={commandPaletteOpen}
         onOpenChange={setCommandPaletteOpen}
@@ -823,7 +1010,17 @@ export default function App() {
           await client.request("research.runAll");
           await refreshResearch();
         }}
-        onCreateLens={(type) => requestNewLens(type)}
+        onCreateLens={async (type) => {
+          if (!type) {
+            openNewLensLauncher();
+            return;
+          }
+          if (type === "chat") {
+            await createRegularChat();
+            return;
+          }
+          requestNewLens(type);
+        }}
         onFocusSection={focusCommandSection}
         onSelectSymbol={(symbol) => selectSymbol(symbol)}
       />
