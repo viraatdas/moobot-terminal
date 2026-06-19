@@ -10,6 +10,15 @@ export const DATA_DIR =
 export const RESEARCH_DIR = path.join(DATA_DIR, "research");
 export const PROPOSALS_FILE = path.join(DATA_DIR, "proposals.json");
 export const RH_AUTH_FILE = path.join(DATA_DIR, "rh-oauth.json");
+export const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
+// Per-venue API/signing secrets. Written 0o600 (owner-only), NEVER inside
+// settings.json (which is broadcast to the UI) and never committed/bundled —
+// DATA_DIR is outside the repo. Only redacted status ever leaves the sidecar.
+export const KALSHI_KEY_FILE = path.join(DATA_DIR, "kalshi-key.json");
+export const POLYMARKET_KEY_FILE = path.join(DATA_DIR, "polymarket-key.json");
+export const HYPERLIQUID_KEY_FILE = path.join(DATA_DIR, "hyperliquid-key.json");
+// Append-only audit trail of every approve/reject decision. Never mutated.
+export const DECISIONS_FILE = path.join(DATA_DIR, "decisions.jsonl");
 
 export const WS_PORT = Number(process.env.MOOBOT_PORT) || 4517;
 export const OAUTH_CALLBACK_PORT = 45171;

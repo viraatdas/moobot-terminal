@@ -158,6 +158,17 @@ fn emit_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>, command: &str) {
     let _ = app.emit("moobot://shortcut", command);
 }
 
+/// Whether a sidecar is already listening on the WS port. When a persistent sidecar
+/// (the launchd service that keeps the auto-trader running with the app closed) is up,
+/// the app uses it instead of spawning — and won't kill it on exit.
+fn sidecar_already_running() -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], 4517)),
+        std::time::Duration::from_millis(300),
+    )
+    .is_ok()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -180,6 +191,7 @@ pub fn run() {
             _ => {}
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(Sidecar(Mutex::new(None)))
         .setup(|app| {
             // In dev, scripts/dev.mjs runs the sidecar. In the bundled app we
@@ -187,18 +199,24 @@ pub fn run() {
             #[cfg(not(debug_assertions))]
             {
                 use tauri::Manager;
-                let script = app.path().resolve(
-                    "resources/sidecar.cjs",
-                    tauri::path::BaseDirectory::Resource,
-                )?;
-                let child = std::process::Command::new("/bin/zsh")
-                    .args(["-lc", &format!("exec node '{}'", script.display())])
-                    .spawn();
-                match child {
-                    Ok(c) => {
-                        *app.state::<Sidecar>().0.lock().unwrap() = Some(c);
+                if sidecar_already_running() {
+                    // A persistent sidecar is already up — use it, and leave the Sidecar
+                    // state None so we never kill it on exit (the auto-trader keeps running).
+                    eprintln!("sidecar already running on :4517 — using it");
+                } else {
+                    let script = app.path().resolve(
+                        "resources/sidecar.cjs",
+                        tauri::path::BaseDirectory::Resource,
+                    )?;
+                    let child = std::process::Command::new("/bin/zsh")
+                        .args(["-lc", &format!("exec node '{}'", script.display())])
+                        .spawn();
+                    match child {
+                        Ok(c) => {
+                            *app.state::<Sidecar>().0.lock().unwrap() = Some(c);
+                        }
+                        Err(e) => eprintln!("failed to start sidecar: {e}"),
                     }
-                    Err(e) => eprintln!("failed to start sidecar: {e}"),
                 }
             }
             #[cfg(debug_assertions)]

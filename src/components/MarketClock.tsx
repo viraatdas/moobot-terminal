@@ -7,7 +7,7 @@ interface MktState {
 }
 
 function marketState(): MktState {
-  // Render the current time in US Eastern, then judge regular session 9:30–16:00 Mon–Fri.
+  // Render the current time in US Eastern, then judge regular session 9:30-16:00 Mon-Fri.
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
     weekday: "short",
@@ -26,9 +26,9 @@ function marketState(): MktState {
   const weekend = wd === "Sat" || wd === "Sun";
   const time = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${ss}`;
   if (weekend) return { label: "CLOSED", open: false, time };
-  if (mins >= 570 && mins < 960) return { label: "OPEN", open: true, time }; // 9:30–16:00
-  if (mins >= 240 && mins < 570) return { label: "PRE", open: false, time }; // 4:00–9:30
-  if (mins >= 960 && mins < 1200) return { label: "AFTER", open: false, time }; // 16:00–20:00
+  if (mins >= 570 && mins < 960) return { label: "OPEN", open: true, time }; // 9:30-16:00
+  if (mins >= 240 && mins < 570) return { label: "PRE", open: false, time }; // 4:00-9:30
+  if (mins >= 960 && mins < 1200) return { label: "AFTER", open: false, time }; // 16:00-20:00
   return { label: "CLOSED", open: false, time };
 }
 

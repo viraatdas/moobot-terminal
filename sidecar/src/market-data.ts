@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "./config.ts";
+import { writeJsonFileAtomic } from "./json-store.ts";
 
 export interface MarketHistoryPoint {
   time: string;
@@ -27,6 +28,8 @@ export interface MarketHistory {
   range: string;
   interval: string;
   source: "yahoo" | "cache" | "unavailable";
+  /** True when OHLC are split + dividend adjusted (total-return), not raw. */
+  adjusted: boolean;
   stale: boolean;
   savedAt: number | null;
   updatedAt: string;
@@ -140,7 +143,8 @@ function readCache(file: string): CachedMarketHistory | null {
     if (
       typeof cached.symbol === "string" &&
       Array.isArray(cached.points) &&
-      typeof cached.savedAt === "number"
+      typeof cached.savedAt === "number" &&
+      cached.adjusted === true // invalidate legacy RAW (dividend-unadjusted) caches
     ) {
       return {
         ...cached,
@@ -164,6 +168,7 @@ function unavailable(
     range,
     interval,
     source: "unavailable",
+    adjusted: false,
     stale: false,
     savedAt: null,
     updatedAt: new Date().toISOString(),
@@ -180,7 +185,8 @@ function yahooUrl(yahooSymbol: string, range: string, interval: string): string 
   );
   url.searchParams.set("range", range);
   url.searchParams.set("interval", interval);
-  url.searchParams.set("events", "history");
+  // div,splits ensures the adjclose series (split + dividend adjusted) is returned.
+  url.searchParams.set("events", "div,splits");
   url.searchParams.set("includePrePost", "false");
   return url.toString();
 }
@@ -204,19 +210,37 @@ function parseYahooHistory(
   const lows: unknown[] = Array.isArray(quote.low) ? quote.low : [];
   const closes: unknown[] = Array.isArray(quote.close) ? quote.close : [];
   const volumes: unknown[] = Array.isArray(quote.volume) ? quote.volume : [];
+  const adjcloses: unknown[] = Array.isArray(result?.indicators?.adjclose?.[0]?.adjclose)
+    ? result.indicators.adjclose[0].adjclose
+    : [];
+  // If Yahoo returns an adjclose array of a different length than close[], the
+  // index alignment is broken and later bars would silently fall back to raw
+  // (ratio=1), mixing adjusted + unadjusted bars. Refuse rather than poison.
+  if (adjcloses.length > 0 && adjcloses.length !== closes.length) {
+    throw new Error(`Yahoo adjclose length ${adjcloses.length} != close length ${closes.length} — refusing possibly-misaligned data`);
+  }
   const points: MarketHistoryPoint[] = [];
 
   for (let i = 0; i < timestamps.length; i += 1) {
-    const close = finiteNumber(closes[i]);
-    if (close === null || close <= 0) continue;
+    const rawClose = finiteNumber(closes[i]);
+    if (rawClose === null || rawClose <= 0) continue;
+    // Total-return adjustment: Yahoo's quote OHLC is split-adjusted but NOT
+    // dividend-adjusted; adjclose is both. Scale O/H/L by adjclose/close so a
+    // dividend ex-date is not read as a real price gap and total return includes
+    // dividends. Falls back to the raw bar when adjclose is missing.
+    const adjClose = finiteNumber(adjcloses[i]);
+    const ratio = adjClose !== null && rawClose > 0 ? adjClose / rawClose : 1;
+    const rawOpen = finiteNumber(opens[i]);
+    const rawHigh = finiteNumber(highs[i]);
+    const rawLow = finiteNumber(lows[i]);
     const time = new Date(timestamps[i] * 1000).toISOString();
     points.push({
       time,
       date: time.slice(0, 10),
-      open: finiteNumber(opens[i]),
-      high: finiteNumber(highs[i]),
-      low: finiteNumber(lows[i]),
-      close,
+      open: rawOpen === null ? null : rawOpen * ratio,
+      high: rawHigh === null ? null : rawHigh * ratio,
+      low: rawLow === null ? null : rawLow * ratio,
+      close: adjClose !== null ? adjClose : rawClose,
       volume: finiteNumber(volumes[i]),
     });
   }
@@ -230,6 +254,7 @@ function parseYahooHistory(
     range,
     interval,
     source: "yahoo",
+    adjusted: true,
     stale: false,
     savedAt,
     updatedAt: new Date(savedAt).toISOString(),
@@ -281,7 +306,7 @@ export class MarketData {
       });
       if (!res.ok) throw new Error(`Yahoo chart HTTP ${res.status}`);
       const history = parseYahooHistory(symbol, yahooSymbol, range, interval, await res.json());
-      fs.writeFileSync(file, JSON.stringify(history, null, 2));
+      writeJsonFileAtomic(file, history);
       return history;
     } catch (err) {
       if (cached) {

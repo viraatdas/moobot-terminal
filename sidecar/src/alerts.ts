@@ -29,9 +29,20 @@ export interface Alert {
   triggeredAt: string | null;
 }
 
-/** Fire a native macOS notification (works regardless of window focus). */
+// When the desktop app is connected it posts notifications NATIVELY (so macOS shows
+// the Moobot icon). The sidecar only falls back to osascript — which always shows the
+// Script Editor icon — when nothing is listening (e.g. a headless/cloud sidecar).
+let notifyDelivery: ((title: string, body: string) => boolean) | null = null;
+export function setNotifyDelivery(fn: ((title: string, body: string) => boolean) | null) {
+  notifyDelivery = fn;
+}
+
+/** Fire a desktop notification (works regardless of window focus). Prefers a native
+ * app-posted notification (Moobot icon); falls back to osascript only when no app is
+ * connected to deliver it. */
 export function notify(title: string, message: string) {
-  if (process.platform === "darwin") {
+  const deliveredNatively = notifyDelivery?.(title, message) ?? false;
+  if (!deliveredNatively && process.platform === "darwin") {
     const escape = (s: string) => s.replace(/["\\]/g, "\\$&");
     const child = spawn(
       "osascript",

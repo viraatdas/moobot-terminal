@@ -129,7 +129,7 @@ export function AlertsModal({
                   {a.triggeredAt && <span className="ml-2 text-[9.5px] text-amber">triggered</span>}
                 </div>
                 <div className="font-data text-[9.5px] text-ink-faint">
-                  {a.lastPrice != null ? `last ${a.lastPrice.toFixed(2)}` : "watching…"}
+                  {a.lastPrice != null ? `last ${a.lastPrice.toFixed(2)}` : "watching..."}
                   {a.note ? ` · ${a.note}` : ""}
                 </div>
               </div>

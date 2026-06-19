@@ -1,13 +1,14 @@
-import { useState } from "react";
-import { Zap } from "lucide-react";
+import { type ReactNode } from "react";
+import { BarChart3, Zap } from "lucide-react";
 import { fmtMoney, fmtPct, type AccountSnapshot, type Position } from "../lib/client";
-import { ChainViewer } from "./ChainViewer";
 
 interface Props {
   snapshot: AccountSnapshot | null;
   robinhoodConnected: boolean;
   agenticBuyingPower: number | null;
   onConnect: () => void;
+  onOpenPortfolioHistory?: () => void;
+  onOpenChain?: (symbol: string) => void;
 }
 
 export function PortfolioRail({
@@ -15,33 +16,50 @@ export function PortfolioRail({
   robinhoodConnected,
   agenticBuyingPower,
   onConnect,
+  onOpenPortfolioHistory,
+  onOpenChain,
 }: Props) {
-  const [chainSymbol, setChainSymbol] = useState<string | null>(null);
-
   const pf = snapshot?.portfolio;
   const asOf = pf?.asOf ? new Date(pf.asOf) : null;
+  const hasTodayPnl = pf?.dayPnl !== undefined && Number.isFinite(pf.dayPnl);
+  const todayPnl = Number(pf?.dayPnl ?? 0);
   const stale = asOf ? Date.now() - asOf.getTime() > 45_000 : false;
+  const clickable = Boolean(onOpenPortfolioHistory);
 
   return (
     <div className="flex min-h-0 flex-col bg-bg">
       {/* header: account value + day P&L */}
       <div className="border-b border-hairline p-4">
-        <div className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">
-          Account value
-        </div>
-        <div className="font-data mt-0.5 text-[22px] font-semibold text-ink">
-          {pf ? fmtMoney(pf.equity) : "n/a"}
-        </div>
-        {pf && (
-          <div
-            className={`font-data mt-0.5 text-[12px] ${
-              pf.pnl >= 0 ? "text-pos" : "text-neg"
-            }`}
-          >
-            {pf.pnl >= 0 ? "▲" : "▼"} {fmtMoney(Math.abs(pf.pnl))} ({fmtPct(pf.pnlPercent)}){" "}
-            {pf.pnlLabel ?? "unrealized"}
+        <button
+          type="button"
+          onClick={onOpenPortfolioHistory}
+          disabled={!clickable}
+          className={`block w-full rounded-sm border px-2 py-2 text-left ${
+            clickable
+              ? "border-hairline bg-panel/35 hover:border-amber/45 hover:bg-panel"
+              : "cursor-default border-transparent"
+          }`}
+          title={clickable ? "Open portfolio performance" : undefined}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[10px] tracking-[0.16em] uppercase text-ink-faint">
+              Account value
+            </div>
+            {clickable && <BarChart3 className="h-3.5 w-3.5 text-amber" />}
           </div>
-        )}
+          <div className="font-data mt-0.5 text-[22px] font-semibold text-ink">
+            {pf ? fmtMoney(pf.equity) : "n/a"}
+          </div>
+          {pf && (
+            <>
+              {hasTodayPnl ? (
+                <PnlLine amount={todayPnl} pct={pf?.dayPnlPercent ?? 0} label="today" prominent />
+              ) : (
+                <div className="mt-1 text-[12px] text-ink-faint">today: waiting for first snapshot</div>
+              )}
+            </>
+          )}
+        </button>
         {asOf && (
           <div className="mt-1 flex items-center gap-1.5 text-[9.5px] tracking-[0.12em] text-ink-faint uppercase">
             <span className={`h-1.5 w-1.5 rounded-full ${stale ? "bg-amber" : "bg-pos live-ping"}`} />
@@ -59,7 +77,7 @@ export function PortfolioRail({
           )}
           <div className="flex-1" />
           <button
-            onClick={() => setChainSymbol("")}
+            onClick={() => onOpenChain?.("")}
             className="flex items-center gap-1 rounded-sm border border-hairline px-2 py-0.5 text-[10px] text-ink-dim hover:border-amber/50 hover:text-amber"
           >
             <Zap className="h-3 w-3" />
@@ -83,13 +101,6 @@ export function PortfolioRail({
         </div>
       )}
 
-      {chainSymbol !== null && (
-        <ChainViewer
-          initialSymbol={chainSymbol || undefined}
-          onClose={() => setChainSymbol(null)}
-        />
-      )}
-
       {/* positions */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {snapshot && (
@@ -98,7 +109,7 @@ export function PortfolioRail({
             <Section
               title="Options"
               positions={snapshot.options}
-              onOpenChain={(sym) => setChainSymbol(sym)}
+              onOpenChain={onOpenChain}
             />
             <Section title="Crypto" positions={snapshot.crypto} />
             {snapshot.equities.length === 0 &&
@@ -111,9 +122,35 @@ export function PortfolioRail({
           </>
         )}
         {!snapshot && robinhoodConnected && (
-          <div className="px-4 py-6 text-center text-[12px] text-ink-faint">Loading positions…</div>
+          <div className="px-4 py-6 text-center text-[12px] text-ink-faint">Loading positions...</div>
         )}
       </div>
+    </div>
+  );
+}
+
+function PnlLine({
+  amount,
+  pct,
+  label,
+  suffix,
+  prominent,
+}: {
+  amount: number;
+  pct: number;
+  label: string;
+  suffix?: ReactNode;
+  prominent?: boolean;
+}) {
+  return (
+    <div
+      className={`font-data ${prominent ? "mt-1 text-[16px] font-semibold" : "mt-0.5 text-[11px]"} ${
+        amount >= 0 ? "text-pos" : "text-neg"
+      }`}
+    >
+      {amount >= 0 ? "▲" : "▼"} {fmtMoney(Math.abs(amount))} ({fmtPct(pct)}){" "}
+      <span className="font-normal text-ink-faint">{label}</span>
+      {suffix}
     </div>
   );
 }

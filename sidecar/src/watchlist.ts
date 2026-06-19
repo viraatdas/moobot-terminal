@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "./config.ts";
+import { writeJsonFileAtomic } from "./json-store.ts";
 
 export interface WatchlistItem {
   symbol: string;
@@ -69,10 +70,7 @@ export class WatchlistStore {
   }
 
   private write(file: WatchlistFile) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    const tmp = `${WATCHLIST_FILE}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(file, null, 2));
-    fs.renameSync(tmp, WATCHLIST_FILE);
+    writeJsonFileAtomic(WATCHLIST_FILE, file);
   }
 
   list(): WatchlistItem[] {
